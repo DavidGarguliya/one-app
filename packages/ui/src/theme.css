@@ -11,8 +11,8 @@
   --focus-ring: 0 0 0 2px rgba(194, 173, 143, 0.38);
 
   /* dark theme */
-  --bg: #191d20;
-  --bg-subtle: #0f121a;
+  --bg: transparent;
+  --bg-subtle: transparent;
   --fg: #f4f7fb;
   --fg-strong: #ffffff;
   --muted: #9ba3b5;
@@ -28,8 +28,8 @@
 }
 
 [data-theme="light"] {
-  --bg: #f2f4f9;
-  --bg-subtle: #ffffff;
+  --bg: transparent;
+  --bg-subtle: transparent;
   --fg: #0a0d14;
   --fg-strong: #000000;
   --muted: #6b7280;

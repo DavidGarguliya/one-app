@@ -783,7 +783,7 @@ export const PlayerBar = () => {
                   <SkipBack size={22} weight="fill" />
                 </button>
                 <button
-                  className="h-14 w-14 rounded-full bg-[var(--fg)] text-[var(--bg)] flex items-center justify-center active:scale-95 transition shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
+                  className="h-14 w-14 rounded-full bg-white/90 text-[#0a0d14] flex items-center justify-center active:scale-95 transition shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
                   onTouchEnd={handlePlayTouchEnd}
                   onClick={handlePlayClick}
                   aria-label={isPlaying ? "Пауза" : "Играть"}
@@ -846,7 +846,7 @@ export const PlayerBar = () => {
             </div>
             <div className="flex items-center gap-1">
               <button
-                className="h-9 w-9 rounded-full bg-[color-mix(in srgb,var(--bg) 60%,transparent)] border border-[var(--border)] flex items-center justify-center active:scale-90 transition"
+                className="h-9 w-9 rounded-full bg-white/90 border border-[var(--border)] text-[#0a0d14] flex items-center justify-center active:scale-90 transition"
                 aria-label={isPlaying ? "Пауза" : "Играть"}
                 onClick={isPlaying ? pause : play}
               >

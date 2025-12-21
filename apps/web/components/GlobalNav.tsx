@@ -20,6 +20,7 @@ const links = [
 export function GlobalNav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const query = useSearchStore((s) => s.query);
   const setQuery = useSearchStore((s) => s.setQuery);
   const onChange = useMemo(() => {
@@ -59,17 +60,15 @@ export function GlobalNav() {
             ))}
           </nav>
 
-          <div className="hidden md:flex items-center gap-2 ml-auto w-64">
-            <label className="flex items-center gap-2 rounded-full bg-[color-mix(in srgb,var(--bg) 70%,transparent)] border border-[var(--border-strong)] px-3 py-[6px] shadow-[var(--shadow-card)] focus-within:ring-[var(--focus-ring)]">
-              <MagnifyingGlass size={16} className="text-[var(--muted)]" />
-              <input
-                aria-label="Поиск треков"
-                defaultValue={query}
-                onChange={(e) => onChange(e.target.value)}
-                className="nav-search-input text-sm text-[var(--fg)] placeholder:text-[var(--muted)] w-full appearance-none focus:ring-0"
-                placeholder="Поиск по трекам"
-              />
-            </label>
+          <div className="hidden md:flex items-center gap-2 ml-auto">
+            <button
+              type="button"
+              className="flex items-center justify-center h-10 w-10 rounded-full text-[var(--fg)] hover:bg-white/5 focus:outline-none focus:ring-[var(--focus-ring)]"
+              onClick={() => setSearchOpen(true)}
+              aria-label="Поиск"
+            >
+              <MagnifyingGlass size={18} />
+            </button>
           </div>
 
           <div className="ml-2 hidden md:flex items-center gap-3">
@@ -110,6 +109,29 @@ export function GlobalNav() {
         </div>
       </div>
       <MobileMenu open={open} onClose={() => setOpen(false)} links={links.map(({ icon, ...rest }) => rest)} />
+      {searchOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-24 px-4 transition-opacity duration-200 animate-[fadeIn_200ms_ease]"
+          onClick={() => setSearchOpen(false)}
+        >
+          <div
+            className="w-full max-w-2xl transition-transform duration-200 animate-[slideUp_200ms_ease]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <label className="flex items-center gap-2 rounded-full bg-[color-mix(in srgb,var(--bg) 70%,transparent)] border border-[var(--border-strong)] px-4 py-3 shadow-[var(--shadow-card)] focus-within:ring-[var(--focus-ring)]">
+              <MagnifyingGlass size={18} className="text-[var(--muted)]" />
+              <input
+                autoFocus
+                aria-label="Поиск треков"
+                defaultValue={query}
+                onChange={(e) => onChange(e.target.value)}
+                className="text-base text-[var(--fg)] placeholder:text-[var(--muted)] w-full appearance-none bg-transparent focus:ring-0 outline-none"
+                placeholder="Поиск по трекам"
+              />
+            </label>
+          </div>
+        </div>
+      )}
     </>
   );
 }
