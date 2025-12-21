@@ -37,10 +37,39 @@ export interface PlaylistDTO {
   title: string;
   description?: string;
   coverUrl: string;
+  coverGrid?: string[];
   trackIds: string[];
   status: PublishStatus;
   createdAt: string;
   publishedAt?: string;
+}
+
+export interface PlaylistMatchExplanation {
+  contextScore: number;
+  contextSignals: {
+    addressing: number;
+    story: number;
+    emotionalIntensity: number;
+    vulnerability: number;
+  };
+  matched: {
+    tags: string[];
+    moods: string[];
+    styles: string[];
+    genres: string[];
+    occasions: string[];
+  };
+  gates: {
+    passed: boolean;
+    reason?: string;
+  };
+}
+
+export interface PlaylistMatchResult {
+  playlistId: string;
+  playlistTitle: string;
+  score: number;
+  explanation: PlaylistMatchExplanation;
 }
 
 export interface UserDTO {

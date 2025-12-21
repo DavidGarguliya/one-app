@@ -30,6 +30,8 @@
     "*.{ts,tsx,js,jsx,json,css,md}": "prettier --write"
   },
   "dependencies": {
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.562.0",
     "minio": "^8.0.6"
   }
 }

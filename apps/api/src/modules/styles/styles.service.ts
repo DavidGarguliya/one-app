@@ -9,7 +9,26 @@ interface Style {
 
 @Injectable()
 export class StylesService {
-  private styles: Style[] = [];
+  private readonly defaults: Style[] = [
+    "Романтичный",
+    "Лиричный",
+    "Душевный",
+    "Камерный",
+    "Минималистичный",
+    "Современный",
+    "Кинематографичный",
+    "Эпичный",
+    "Торжественный",
+    "Лёгкий",
+    "Танцевальный",
+    "Медитативный",
+    "Атмосферный",
+    "Интимный",
+    "Светлый",
+    "Глубокий"
+  ].map((name, idx) => ({ id: `style-${idx + 1}`, name }));
+
+  private styles: Style[] = [...this.defaults];
 
   findAll() {
     return this.styles;

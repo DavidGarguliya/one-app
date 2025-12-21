@@ -6,7 +6,30 @@ interface Occasion { id: string; name: string }
 
 @Injectable()
 export class OccasionsService {
-  private occasions: Occasion[] = [];
+  private readonly defaults: Occasion[] = [
+    "День рождения",
+    "Юбилей",
+    "Свадьба",
+    "Годовщина отношений",
+    "Признание в любви",
+    "Предложение руки и сердца",
+    "Рождение ребёнка",
+    "Для мамы",
+    "Для папы",
+    "Для друга",
+    "Для подруги",
+    "Для ребёнка",
+    "Семейный подарок",
+    "Подарок без повода",
+    "Поддержка в трудный момент",
+    "Благодарность",
+    "Прощание",
+    "Новый этап жизни",
+    "Мотивация",
+    "Подарок себе"
+  ].map((name, idx) => ({ id: `occ-${idx + 1}`, name }));
+
+  private occasions: Occasion[] = [...this.defaults];
 
   findAll() { return this.occasions; }
   findOne(id: string) { const item = this.occasions.find((o) => o.id === id); if (!item) throw new NotFoundException("Occasion not found"); return item; }

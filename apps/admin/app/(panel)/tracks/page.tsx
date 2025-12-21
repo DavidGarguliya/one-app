@@ -28,6 +28,12 @@ export default function TracksAdminPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [confirmTracks, setConfirmTracks] = useState<Track[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [styleOptions, setStyleOptions] = useState<string[]>([]);
+  const [moodOptions, setMoodOptions] = useState<string[]>([]);
+  const [occasionOptions, setOccasionOptions] = useState<string[]>([]);
+  const [genreOptions, setGenreOptions] = useState<string[]>([]);
+  const [playlistOptions, setPlaylistOptions] = useState<string[]>([]);
+  const [playlists, setPlaylists] = useState<{ id: string; title: string; trackIds: string[] }[]>([]);
   const [filterTitle, setFilterTitle] = useState("");
   const [filterArtist, setFilterArtist] = useState("");
   const [filterStyle, setFilterStyle] = useState("");
@@ -65,6 +71,61 @@ export default function TracksAdminPage() {
   useEffect(() => {
     loadTracks();
   }, [loadTracks]);
+
+  useEffect(() => {
+    let mounted = true;
+    const normalize = (item: any) => {
+      if (!item) return null;
+      if (typeof item === "string") return item;
+      return item.name || item.title || item.value || null;
+    };
+    const mergeUnique = (incoming: any[]) => {
+      const normalized = incoming.map(normalize).filter(Boolean) as string[];
+      return Array.from(new Set(normalized)).sort((a, b) => a.localeCompare(b, "ru"));
+    };
+    (async () => {
+      try {
+        const [styles, moods, occasions, tags, playlistsRaw] = await Promise.all([
+          adminApi.listStyles().catch(() => []),
+          adminApi.listMoods().catch(() => []),
+          adminApi.listOccasions().catch(() => []),
+          adminApi.listTags?.().catch(() => []) ?? [],
+          adminApi.listPlaylists().catch(() => [])
+        ]);
+        if (!mounted) return;
+        setStyleOptions(mergeUnique(styles));
+        setMoodOptions(mergeUnique(moods));
+        setOccasionOptions(mergeUnique(occasions));
+        const genres = Array.isArray(tags) ? tags.filter((t) => t?.type === "genre") : [];
+        const defaults = [
+          "Pop",
+          "Acoustic",
+          "Cinematic",
+          "Ballad",
+          "Epic",
+          "Jazz",
+          "Classical",
+          "Electronic",
+          "Dance",
+          "Chill / Ambient"
+        ];
+        setGenreOptions(mergeUnique([...defaults, ...genres]));
+        setPlaylistOptions(mergeUnique(playlistsRaw));
+        setPlaylists(
+          (Array.isArray(playlistsRaw) ? playlistsRaw : []).map((p: any) => ({
+            id: String(p.id ?? p._id ?? ""),
+            title: p.title ?? "Без названия",
+            trackIds: Array.isArray(p.trackIds) ? p.trackIds.map(String) : []
+          }))
+        );
+      } catch (err) {
+        console.warn("Не удалось загрузить справочники", err);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const setField = (uiId: string, patch: Partial<Track>) => {
     setEdits((prev) => ({ ...prev, [uiId]: { ...prev[uiId], ...patch } }));
@@ -231,6 +292,49 @@ export default function TracksAdminPage() {
     }
   };
 
+  const handleAddToPlaylist = async (track: Track, playlistId: string) => {
+    if (!playlistId) return;
+    const pl = playlists.find((p) => p.id === playlistId);
+    if (!pl) return;
+    const trackId = track.id || track.apiId;
+    if (!trackId) return;
+    if (pl.trackIds.includes(trackId)) return;
+    setSavingId(track.uiId);
+    setError(null);
+    try {
+      await adminApi.updatePlaylist(playlistId, { trackIds: [...pl.trackIds, trackId] });
+      await loadTracks();
+      setPlaylists((prev) =>
+        prev.map((p) => (p.id === playlistId ? { ...p, trackIds: [...p.trackIds, trackId] } : p))
+      );
+    } catch (e: any) {
+      setError(e?.message || "Не удалось добавить в плейлист");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleRemoveFromPlaylist = async (track: Track, playlistId: string) => {
+    const pl = playlists.find((p) => p.id === playlistId);
+    if (!pl) return;
+    const trackId = track.id || track.apiId;
+    if (!trackId) return;
+    setSavingId(track.uiId);
+    setError(null);
+    try {
+      const nextIds = pl.trackIds.filter((id) => id !== trackId);
+      await adminApi.updatePlaylist(playlistId, { trackIds: nextIds });
+      await loadTracks();
+      setPlaylists((prev) =>
+        prev.map((p) => (p.id === playlistId ? { ...p, trackIds: nextIds } : p))
+      );
+    } catch (e: any) {
+      setError(e?.message || "Не удалось удалить из плейлиста");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   const handleDelete = async (track: Track) => {
     setDeletingId(track.uiId);
     setError(null);
@@ -339,6 +443,11 @@ export default function TracksAdminPage() {
       {loading && <p className="text-sm text-[var(--muted)]">Загружаем треки…</p>}
 
       <Card>
+        <datalist id="style-options">{styleOptions.map((opt) => <option key={opt} value={opt} />)}</datalist>
+        <datalist id="mood-options">{moodOptions.map((opt) => <option key={opt} value={opt} />)}</datalist>
+        <datalist id="occasion-options">{occasionOptions.map((opt) => <option key={opt} value={opt} />)}</datalist>
+        <datalist id="genre-options">{genreOptions.map((opt) => <option key={opt} value={opt} />)}</datalist>
+        <datalist id="playlist-options">{playlistOptions.map((opt) => <option key={opt} value={opt} />)}</datalist>
         <div className="grid grid-cols-5 md:grid-cols-7 gap-2 text-sm text-white/60 mb-3">
           <div className="flex items-center gap-2">
             <input
@@ -386,7 +495,7 @@ export default function TracksAdminPage() {
           <span className="hidden md:block" />
         </div>
 
-        <div className="grid grid-cols-[52px,72px,1.8fr,1.2fr,1.1fr,0.8fr,1fr] text-sm text-white/60 mb-2">
+        <div className="grid grid-cols-[52px,72px,1.8fr,1.2fr,1.1fr,0.8fr,0.9fr] text-sm text-white/60 mb-2">
           <button type="button" className="text-left" onClick={() => toggleSort("id")}>
             #
           </button>
@@ -409,7 +518,7 @@ export default function TracksAdminPage() {
           {filteredTracks.map((t: Track, idx) => {
             const editing = editingIds.includes(t.uiId);
             return (
-              <div key={`${t.uiId}-${idx}`} className="grid grid-cols-[52px,72px,1.8fr,1.2fr,1.1fr,0.8fr,1fr] py-2 items-center gap-2 hover:bg-white/5 transition rounded-md px-2 -mx-2">
+              <div key={`${t.uiId}-${idx}`} className="grid grid-cols-[52px,72px,1.8fr,1.2fr,1.1fr,0.8fr,0.9fr] py-2 items-center gap-2 hover:bg-white/5 transition rounded-md px-2 -mx-2">
                 <input
                   type="checkbox"
                   className="h-4 w-4 accent-[var(--accent)]"
@@ -445,12 +554,14 @@ export default function TracksAdminPage() {
                       onChange={(e) => setField(t.uiId, { style: e.target.value })}
                       placeholder="Стиль или жанр"
                       className="h-9"
+                      list="style-options"
                     />
                     <Input
                       value={currentValue(t, "occasion")}
                       onChange={(e) => setField(t.uiId, { occasion: e.target.value })}
                       placeholder="Повод"
                       className="h-9"
+                      list="occasion-options"
                     />
                   </div>
                 ) : (
@@ -467,7 +578,7 @@ export default function TracksAdminPage() {
                   <span className="text-white/70">{displayValue(t, "artist", editing)}</span>
                 )}
                 <span className="text-xs uppercase tracking-wide text-white/70">{displayValue(t, "status", editing)}</span>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-start">
                   {editing ? (
                     <div className="flex gap-2">
                     <Button
@@ -496,6 +607,52 @@ export default function TracksAdminPage() {
                       {savingId === t.uiId ? "Публикуем..." : "Опубликовать"}
                     </Button>
                   ) : null}
+                  {!editing && playlists.length > 0 && (
+                    <select
+                      className="h-9 rounded-lg bg-white/5 border border-white/10 px-2 text-sm text-white/80"
+                      defaultValue=""
+                      onChange={(e) => {
+                        const pid = e.target.value;
+                        e.target.value = "";
+                        handleAddToPlaylist(t, pid);
+                      }}
+                      disabled={savingId === t.uiId}
+                    >
+                      <option value="" disabled>
+                        В плейлист
+                      </option>
+                      {playlists
+                        .filter((p) => !(p.trackIds || []).includes(t.id || t.apiId))
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  {!editing && (
+                    <div className="flex flex-wrap gap-1">
+                      {playlists
+                        .filter((p) => (p.trackIds || []).includes(t.id || t.apiId))
+                        .map((p) => (
+                          <span
+                            key={`${t.uiId}-${p.id}`}
+                            className="flex items-center gap-1 rounded-full bg-white/10 px-2 py-1 text-xs text-white/80"
+                          >
+                            {p.title}
+                            <button
+                              type="button"
+                              className="text-white/60 hover:text-white"
+                              onClick={() => handleRemoveFromPlaylist(t, p.id)}
+                              aria-label="Удалить из плейлиста"
+                              disabled={savingId === t.uiId}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                    </div>
+                  )}
                   {!editing && (
                     <Button
                       variant="ghost"

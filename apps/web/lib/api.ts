@@ -62,7 +62,13 @@ export async function fetchPlaylists(): Promise<PlaylistDTO[]> {
   try {
     const res = await fetch(`${API_URL}/v1/playlists`, { cache: "no-store" });
     if (!res.ok) return [];
-    return (await safeJson<PlaylistDTO[]>(res)) || [];
+    const data = (await safeJson<PlaylistDTO[]>(res)) || [];
+    return data.filter(
+      (pl) =>
+        (!pl.status || pl.status === "published") &&
+        Array.isArray(pl.trackIds) &&
+        pl.trackIds.length > 0
+    );
   } catch {
     return [];
   }

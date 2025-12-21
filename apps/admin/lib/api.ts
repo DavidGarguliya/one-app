@@ -27,6 +27,7 @@ export const adminApi = {
   deletePlaylist: (id: string) => request<any>(`/v1/playlists/${id}`, { method: "DELETE" }),
   listTags: () => request<any[]>("/v1/tags"),
   createTag: (body: any) => request<any>("/v1/tags", { method: "POST", body: JSON.stringify(body) }),
+  updateTag: (id: string, body: any) => request<any>(`/v1/tags/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteTag: (id: string) => request<any>(`/v1/tags/${id}`, { method: "DELETE" }),
   listStyles: () => request<any[]>("/v1/styles"),
   createStyle: (body: any) => request<any>("/v1/styles", { method: "POST", body: JSON.stringify(body) }),

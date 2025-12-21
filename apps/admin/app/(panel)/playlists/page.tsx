@@ -30,6 +30,7 @@ export default async function PlaylistsAdminPage() {
               <span className="text-white/70 text-xs uppercase">{pl.status}</span>
               <div className="flex gap-2">
                 <Link href={`/playlists/${pl.id}`} className="text-sm text-[var(--accent)]">Открыть</Link>
+                <Link href={`/playlists/${pl.id}`} className="text-sm text-white/70 hover:text-white">Редактировать</Link>
               </div>
             </div>
           ))}

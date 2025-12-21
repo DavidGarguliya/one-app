@@ -13,9 +13,10 @@ export class CreatePlaylistDto {
   @IsString()
   description?: string;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsUrl()
-  coverUrl!: string;
+  coverUrl?: string;
 
   @ApiProperty({ type: [String] })
   @IsArray()
