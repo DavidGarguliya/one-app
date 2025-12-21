@@ -1,0 +1,63 @@
+@import url("https://fonts.googleapis.com/css2?family=Sofia+Sans+Condensed:wght@100;200&display=swap");
+@import "@one-app/ui/theme.css";
+
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+input:not([type="range"]),
+textarea,
+select {
+  background: color-mix(in srgb, var(--bg) 88%, #000000) !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--border-strong) !important;
+  appearance: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
+input[type="file"] {
+  color: var(--fg) !important;
+}
+
+option {
+  background: color-mix(in srgb, var(--bg) 90%, #000000);
+  color: var(--fg);
+}
+
+button:focus,
+button:focus-visible,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.nav-search-input {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 4px 0;
+}
+
+.nav-search-input::-webkit-search-cancel-button,
+.nav-search-input::-webkit-search-decoration,
+.nav-search-input::-webkit-search-results-button,
+.nav-search-input::-webkit-search-results-decoration {
+  display: none;
+}

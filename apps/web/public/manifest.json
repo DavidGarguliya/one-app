@@ -1,0 +1,9 @@
+{
+  "name": "One App Audio",
+  "short_name": "OneAudio",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#050505",
+  "icons": []
+}

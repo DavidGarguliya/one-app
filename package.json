@@ -1,0 +1,35 @@
+{
+  "name": "one-app",
+  "private": true,
+  "packageManager": "pnpm@10.26.0",
+  "scripts": {
+    "postinstall": "pnpm -r --filter api exec -- sh -c \"[ -f prisma/schema.prisma ] && prisma generate || true\"",
+    "dev": "pnpm -r dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev:admin": "pnpm --filter admin dev",
+    "dev:api": "pnpm --filter api start:dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "format": "pnpm -r prettier --write",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "@tailwindcss/forms": "^0.5.7",
+    "@tailwindcss/typography": "^0.5.10",
+    "@types/node": "^20.10.5",
+    "autoprefixer": "^10.4.23",
+    "husky": "^8.0.0",
+    "lint-staged": "^15.0.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript": "^5.3.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,css,md}": "prettier --write"
+  },
+  "dependencies": {
+    "minio": "^8.0.6"
+  }
+}

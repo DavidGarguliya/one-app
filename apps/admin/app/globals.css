@@ -1,0 +1,53 @@
+@import "@one-app/ui/theme.css";
+
+html,
+body {
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  color-scheme: dark;
+}
+
+input:not([type="checkbox"]),
+textarea,
+select {
+  background: color-mix(in srgb, var(--bg) 88%, #000000) !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--border-strong) !important;
+  color-scheme: dark;
+  appearance: none;
+}
+
+input[type="checkbox"] {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  appearance: auto;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+
+input[type="file"] {
+  color: var(--fg) !important;
+}
+
+option {
+  background: color-mix(in srgb, var(--bg) 90%, #000000);
+  color: var(--fg);
+}
+
+button:focus,
+button:focus-visible,
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}

@@ -1,0 +1,1 @@
+export default function GdprPage(){return (<main className="px-4 py-10 md:px-8 lg:px-12 space-y-4"><h1 className="text-3xl font-semibold">GDPR</h1><p className="text-white/70">Мы обрабатываем персональные данные согласно GDPR. Здесь будет размещён полный текст политики и права пользователя.</p></main>);}
