@@ -143,29 +143,33 @@ export default function TracksAdminPage() {
   };
 
   const updateTrackSafe = async (track: Track, body: any) => {
-    try {
-      await adminApi.updateTrack(track.apiId, body);
-      return;
-    } catch (err: any) {
-      if (track.id && track.id !== track.apiId) {
-        await adminApi.updateTrack(track.id, body);
+    const candidates = [track.apiId, track.id].filter(Boolean) as string[];
+    if (!candidates.length) throw new Error("Нет идентификатора трека");
+    let lastError: any = null;
+    for (const id of candidates) {
+      try {
+        await adminApi.updateTrack(id, body);
         return;
+      } catch (err) {
+        lastError = err;
       }
-      throw err;
     }
+    if (lastError) throw lastError;
   };
 
   const deleteTrackSafe = async (track: Track) => {
-    try {
-      await adminApi.deleteTrack(track.apiId);
-      return;
-    } catch (err: any) {
-      if (track.id && track.id !== track.apiId) {
-        await adminApi.deleteTrack(track.id);
+    const candidates = [track.apiId, track.id].filter(Boolean) as string[];
+    if (!candidates.length) throw new Error("Нет идентификатора трека");
+    let lastError: any = null;
+    for (const id of candidates) {
+      try {
+        await adminApi.deleteTrack(id);
         return;
+      } catch (err) {
+        lastError = err;
       }
-      throw err;
     }
+    if (lastError) throw lastError;
   };
 
   const buildPayload = (track: Track, extra?: Partial<Track>) => {
@@ -195,7 +199,7 @@ export default function TracksAdminPage() {
   };
 
   const handleSave = async (track: Track) => {
-    setSavingId(track.apiId);
+    setSavingId(track.uiId);
     setError(null);
     try {
       const payload = buildPayload(track);
@@ -215,7 +219,7 @@ export default function TracksAdminPage() {
   };
 
   const handlePublish = async (track: Track) => {
-    setSavingId(track.apiId);
+    setSavingId(track.uiId);
     setError(null);
     try {
       await updateTrackSafe(track, { status: "published" });
@@ -228,7 +232,7 @@ export default function TracksAdminPage() {
   };
 
   const handleDelete = async (track: Track) => {
-    setDeletingId(track.apiId);
+    setDeletingId(track.uiId);
     setError(null);
     try {
       await deleteTrackSafe(track);
@@ -273,6 +277,21 @@ export default function TracksAdminPage() {
     }
   };
 
+  const handleUnpublishBulk = async (items: Track[]) => {
+    setBulkDeleting(true);
+    setError(null);
+    try {
+      await Promise.all(items.map((t) => updateTrackSafe(t, { status: "draft" })));
+      await loadTracks();
+      setSelectedIds([]);
+      setEditingIds([]);
+    } catch (e: any) {
+      setError(e?.message || "Не удалось снять с публикации выбранные треки");
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -290,6 +309,8 @@ export default function TracksAdminPage() {
               if (!items.length) return;
               if (action === "publish") {
                 handlePublishBulk(items);
+              } else if (action === "unpublish") {
+                handleUnpublishBulk(items);
               } else if (action === "edit") {
                 setEditing(items.map((t) => t.uiId));
               } else if (action === "delete") {
@@ -304,6 +325,7 @@ export default function TracksAdminPage() {
               Действия
             </option>
             <option value="publish">Опубликовать</option>
+            <option value="unpublish">Снять с публикации</option>
             <option value="edit">Редактировать</option>
             <option value="delete">Удалить</option>
           </select>
@@ -448,11 +470,11 @@ export default function TracksAdminPage() {
                 <div className="flex gap-2 flex-wrap">
                   {editing ? (
                     <div className="flex gap-2">
-                      <Button
-                        onClick={() => handleSave(t)}
-                        disabled={savingId === t.apiId}
+                    <Button
+                      onClick={() => handleSave(t)}
+                        disabled={savingId === t.uiId}
                       >
-                        {savingId === t.apiId ? "Сохраняем..." : "Сохранить"}
+                        {savingId === t.uiId ? "Сохраняем..." : "Сохранить"}
                       </Button>
                       <Button
                         variant="ghost"
@@ -464,28 +486,25 @@ export default function TracksAdminPage() {
                             return next;
                           });
                         }}
-                        disabled={savingId === t.apiId}
+                        disabled={savingId === t.uiId}
                       >
                         Отменить
                       </Button>
                     </div>
                   ) : t.status === "draft" ? (
-                    <Button onClick={() => handlePublish(t)} disabled={savingId === t.apiId}>
-                      {savingId === t.apiId ? "Публикуем..." : "Опубликовать"}
+                    <Button onClick={() => handlePublish(t)} disabled={savingId === t.uiId}>
+                      {savingId === t.uiId ? "Публикуем..." : "Опубликовать"}
                     </Button>
                   ) : null}
                   {!editing && (
-                    <>
-                      <Link href={`/tracks/${t.id}`} className="text-sm text-[var(--accent)]">Редактировать</Link>
-                      <Button
-                        variant="ghost"
-                        onClick={() => setConfirmTracks([t])}
-                        disabled={deletingId === t.apiId}
-                        className="text-red-300 hover:text-red-200 hover:bg-red-300/10"
-                      >
-                        Удалить
-                      </Button>
-                    </>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setConfirmTracks([t])}
+                      disabled={deletingId === t.uiId}
+                      className="text-red-300 hover:text-red-200 hover:bg-red-300/10"
+                    >
+                      Удалить
+                    </Button>
                   )}
                 </div>
               </div>
@@ -502,7 +521,7 @@ export default function TracksAdminPage() {
               <p className="text-lg font-semibold text-white">Удалить {confirmTracks.length > 1 ? "треки" : "трек"}?</p>
               <div className="text-sm text-white/70 mt-1 space-y-1 max-h-32 overflow-y-auto">
                 {confirmTracks.slice(0, 3).map((ct) => (
-                  <p key={ct.apiId}>
+                  <p key={ct.id}>
                     {ct.title} — {ct.artist || "Без артиста"}
                   </p>
                 ))}
