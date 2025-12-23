@@ -7,24 +7,28 @@ import { Play } from "@phosphor-icons/react";
 import { usePlayerStore } from "@one-app/player";
 const placeholder = "/cover-placeholder.svg";
 
-export function TrackCard({ track, variant = "grid" }: { track: TrackDTO; variant?: "grid" | "compact" }) {
+type Props = {
+  track: TrackDTO;
+  variant?: "grid" | "compact";
+  queue?: TrackDTO[];
+  index?: number;
+};
+
+export function TrackCard({ track, variant = "grid", queue, index = 0 }: Props) {
   const { setQueue, play } = usePlayerStore();
 
   const handlePlay = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setQueue(
-      [
-        {
-          id: track.id,
-          url: track.audioUrl,
-          title: track.title,
-          artist: track.artist || "",
-          coverUrl: track.coverUrl
-        } as any
-      ],
-      0
-    );
+    const list = queue && queue.length ? queue : [track];
+    const mapped = list.map((t) => ({
+      id: t.id,
+      url: (t as any).audioUrl || (t as any).url,
+      title: t.title,
+      artist: t.artist || "",
+      coverUrl: t.coverUrl
+    })) as any[];
+    setQueue(mapped, Math.max(0, Math.min(index, mapped.length - 1)));
     play();
   };
 

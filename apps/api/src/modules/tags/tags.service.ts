@@ -88,6 +88,22 @@ export class TagsService {
 
   private tags: TagDTO[] = [...this.defaultGenres, ...this.defaultTags];
 
+  private ensureGenre(name?: string | null): TagDTO | null {
+    if (!name) return null;
+    const normalized = name.toString().trim();
+    if (!normalized) return null;
+    const slug = this.slugify(normalized);
+    const existing = this.tags.find((t) => t.type === "genre" && t.slug === slug);
+    if (existing) return existing;
+    const tag: TagDTO = { id: `genre-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, type: "genre", name: normalized, slug };
+    this.tags.push(tag);
+    return tag;
+  }
+
+  ensureGenresFromList(genres: (string | undefined | null)[]) {
+    genres.forEach((g) => this.ensureGenre(g));
+  }
+
   findAll() {
     return this.tags;
   }

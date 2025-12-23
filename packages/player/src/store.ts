@@ -56,7 +56,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       duration: state.duration,
       currentTime: state.currentTime,
       isPlaying: !state.paused,
-      volume: state.volume
+      volume: state.volume,
+      shuffle: state.shuffle ?? get().shuffle
     });
   };
 
@@ -97,9 +98,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       sync();
     },
     toggleShuffle: () => {
-      const nowShuffle = !get().shuffle;
-      audioEngine.toggleShuffle();
-      set({ shuffle: nowShuffle });
+      audioEngine.setShuffle();
+      set({ shuffle: audioEngine.state().shuffle ?? false });
       sync();
     },
     setRepeat: (mode) => {

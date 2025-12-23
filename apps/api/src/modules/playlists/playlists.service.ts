@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, forwardRef } from "@nestjs/common";
 import { CreatePlaylistDto } from "./dto/create-playlist.dto";
 import { UpdatePlaylistDto } from "./dto/update-playlist.dto";
 import { PlaylistDTO } from "@one-app/types";
@@ -6,7 +6,7 @@ import { TracksService } from "../tracks/tracks.service";
 
 @Injectable()
 export class PlaylistsService {
-  constructor(private readonly tracksService: TracksService) {}
+  constructor(@Inject(forwardRef(() => TracksService)) private readonly tracksService: TracksService) {}
 
   private sanitizeTrackIds(trackIds?: any[]): string[] {
     if (!Array.isArray(trackIds)) return [];
@@ -93,6 +93,32 @@ export class PlaylistsService {
   }));
 
   private playlists: PlaylistDTO[] = [...this.defaults];
+
+  private getLatestPlaylistId() {
+    const existing = this.playlists.find((p) => p.title.toLowerCase() === "последние добавленные");
+    if (existing) return existing.id;
+    const latest: PlaylistDTO = {
+      id: `pl-latest`,
+      title: "Последние добавленные",
+      description: "Автоматически наполняется новыми треками",
+      coverUrl: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=800&q=80",
+      trackIds: [],
+      status: "published",
+      createdAt: new Date().toISOString(),
+      publishedAt: new Date().toISOString()
+    };
+    this.playlists.unshift(latest);
+    return latest.id;
+  }
+
+  addToLatest(trackId: string) {
+    const latestId = this.getLatestPlaylistId();
+    const idx = this.playlists.findIndex((p) => p.id === latestId);
+    if (idx === -1) return;
+    const set = new Set(this.playlists[idx].trackIds);
+    set.add(trackId);
+    this.playlists[idx] = { ...this.playlists[idx], trackIds: Array.from(set) };
+  }
 
   findAll(): PlaylistDTO[] {
     return this.playlists;

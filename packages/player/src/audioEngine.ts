@@ -24,7 +24,9 @@ class AudioEngine extends EventEmitter {
   private audio: HTMLAudioElement | null = null;
   private repeat: RepeatMode = "off";
   private queue: AudioTrack[] = [];
-  private index = 0;
+  private order: number[] = [];
+  private orderIndex = 0;
+  private shuffle = false;
   private initialized = false;
   constructor() {
     super();
@@ -34,7 +36,8 @@ class AudioEngine extends EventEmitter {
 
 
   get current(): AudioTrack | null {
-    return this.queue[this.index] ?? null;
+    const idx = this.order[this.orderIndex] ?? 0;
+    return this.queue[idx] ?? null;
   }
 
   init() {
@@ -58,10 +61,8 @@ class AudioEngine extends EventEmitter {
 
   setQueue(queue: AudioTrack[], startIndex = 0) {
     this.queue = queue;
-    this.index = Math.max(0, Math.min(startIndex, queue.length - 1));
-    if (this.queue.length) {
-      this.load(this.queue[this.index]);
-    }
+    this.buildOrder(startIndex);
+    if (this.queue.length) this.loadCurrent();
   }
 
   private handleEnded() {
@@ -70,20 +71,27 @@ class AudioEngine extends EventEmitter {
       this.play();
       return;
     }
-    if (this.index < this.queue.length - 1) {
-      this.next();
-    } else if (this.repeat === "all" && this.queue.length) {
-      this.index = 0;
-      this.load(this.queue[this.index]);
+    const hasNext = this.orderIndex < this.order.length - 1;
+    if (hasNext) {
+      this.orderIndex += 1;
+      this.loadCurrent();
       this.play();
-    } else {
-      this.emit("ended");
+      return;
     }
+    if (this.repeat === "all" && this.queue.length) {
+      this.orderIndex = 0;
+      this.loadCurrent();
+      this.play();
+      return;
+    }
+    this.emit("ended");
   }
 
-  load(track: AudioTrack) {
+  private loadCurrent() {
     if (!this.audio) this.init();
     if (!this.audio) return;
+    const track = this.current;
+    if (!track) return;
     this.audio.src = track.url;
     this.audio.load();
   }
@@ -109,25 +117,69 @@ class AudioEngine extends EventEmitter {
   }
 
   next() {
-    if (this.index < this.queue.length - 1) {
-      this.index += 1;
-      this.load(this.queue[this.index]);
-      this.play();
+    const hasNext = this.orderIndex < this.order.length - 1;
+    if (!hasNext) {
+      if (this.repeat === "all" && this.order.length) {
+        this.orderIndex = 0;
+        this.loadCurrent();
+        this.play();
+      }
+      return;
     }
+    this.orderIndex += 1;
+    this.loadCurrent();
+    this.play();
   }
 
   prev() {
-    if (this.index > 0) {
-      this.index -= 1;
-      this.load(this.queue[this.index]);
+    if (this.audio && this.audio.currentTime > 3) {
+      this.seek(0);
       this.play();
+      return;
     }
+    const hasPrev = this.orderIndex > 0;
+    if (!hasPrev) {
+      if (this.repeat === "all" && this.order.length) {
+        this.orderIndex = this.order.length - 1;
+        this.loadCurrent();
+        this.play();
+      }
+      return;
+    }
+    this.orderIndex -= 1;
+    this.loadCurrent();
+    this.play();
   }
 
-  toggleShuffle() {
-    this.queue = this.queue.sort(() => Math.random() - 0.5);
-    this.index = 0;
-    if (this.queue.length) this.load(this.queue[this.index]);
+  private buildOrder(startIndex = 0) {
+    const length = this.queue.length;
+    if (!length) {
+      this.order = [];
+      this.orderIndex = 0;
+      return;
+    }
+    const indices = Array.from({ length }, (_, i) => i);
+    const clampStart = Math.max(0, Math.min(startIndex, length - 1));
+    if (!this.shuffle) {
+      this.order = indices;
+      this.orderIndex = clampStart;
+      return;
+    }
+    // shuffle but keep current track at head
+    const currentIdx = indices.splice(clampStart, 1)[0];
+    for (let i = indices.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    this.order = [currentIdx, ...indices];
+    this.orderIndex = 0;
+  }
+
+  setShuffle(on?: boolean) {
+    this.shuffle = on === undefined ? !this.shuffle : on;
+    const currentIndex = this.order[this.orderIndex] ?? 0;
+    this.buildOrder(currentIndex);
+    this.loadCurrent();
   }
 
   setRepeat(mode: RepeatMode) {
@@ -143,7 +195,8 @@ class AudioEngine extends EventEmitter {
       currentTime: this.audio?.currentTime ?? 0,
       paused: this.audio?.paused ?? true,
       volume: this.audio?.volume ?? 1,
-      ready: this.initialized
+      ready: this.initialized,
+      shuffle: this.shuffle
     };
   }
 }

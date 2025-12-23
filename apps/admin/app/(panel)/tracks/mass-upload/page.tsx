@@ -25,13 +25,21 @@ type ParsedTrack = {
   };
 };
 
-const readAsDataUrl = (file: File) =>
-  new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (err) => reject(err);
-    reader.readAsDataURL(file);
+const uploadFile = async (file: Blob, fileName: string) => {
+  const form = new FormData();
+  form.append("file", file, fileName);
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+  const res = await fetch(`${apiUrl}/v1/tracks/upload`, {
+    method: "POST",
+    body: form
   });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Не удалось загрузить файл");
+  }
+  const json = await res.json();
+  return json.url as string;
+};
 
 const blobToDataUrl = (data: Uint8Array, type: string) =>
   new Promise<string>((resolve) => {
@@ -46,6 +54,7 @@ export default function TracksMassUploadPage() {
   const [parsing, setParsing] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [publishStatus, setPublishStatus] = useState<"draft" | "published">("published");
   const [styleOptions, setStyleOptions] = useState<string[]>([]);
   const [moodOptions, setMoodOptions] = useState<string[]>([]);
   const [occasionOptions, setOccasionOptions] = useState<string[]>([]);
@@ -105,13 +114,15 @@ export default function TracksMassUploadPage() {
       const file = files[i];
       try {
         const metadata = await parseBlob(file);
-        const audioUrl = await readAsDataUrl(file);
+        const audioUrl = await uploadFile(file, file.name);
         const title = metadata.common.title || file.name.replace(/\.[^.]+$/, "");
         const artist = metadata.common.artist || "";
         const album = metadata.common.album || "";
         const year = metadata.common.year ? String(metadata.common.year) : metadata.common.date || "";
         const cover = metadata.common.picture?.[0];
-        const coverUrl = cover ? await blobToDataUrl(cover.data, cover.format) : undefined;
+        const coverUrl = cover
+          ? await blobToDataUrl(cover.data, cover.format || "image/jpeg")
+          : undefined;
 
         setItems((prev) =>
           prev.map((it, idx) =>
@@ -169,7 +180,7 @@ export default function TracksMassUploadPage() {
           audioUrl: it.data.audioUrl,
           coverUrl: it.data.coverUrl || "",
           coverSource: it.data.coverSource || (it.data.coverUrl ? "uploaded" : undefined),
-          status: "draft",
+          status: publishStatus,
           year: it.data.year || undefined,
           style: it.data.style || undefined,
           mood: it.data.mood || undefined,
@@ -200,9 +211,22 @@ export default function TracksMassUploadPage() {
             Загрузите десятки файлов сразу (mp3, wav, aiff) — мы распарсим метаданные, обложки и дадим отредактировать перед сохранением.
           </p>
         </div>
-        <Button variant="ghost" onClick={() => setItems([])} disabled={!items.length}>
-          Очистить список
-        </Button>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-[var(--fg)]/80 flex items-center gap-2">
+            Статус:
+            <select
+              value={publishStatus}
+              onChange={(e) => setPublishStatus(e.target.value as "draft" | "published")}
+              className="rounded-lg bg-[color-mix(in srgb,var(--bg) 70%,transparent)] border border-[var(--border-strong)] px-2 py-1 text-sm"
+            >
+              <option value="draft">Черновик</option>
+              <option value="published">Опубликован</option>
+            </select>
+          </label>
+          <Button variant="ghost" onClick={() => setItems([])} disabled={!items.length}>
+            Очистить список
+          </Button>
+        </div>
       </div>
 
       <Card className="space-y-3 p-4 rounded-2xl">

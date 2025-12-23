@@ -5,13 +5,21 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const onlyPublished = (items: TrackDTO[]) =>
   (items || []).filter((t) => !t.status || t.status === "published");
 
+const withProxyAudio = (items: TrackDTO[]) =>
+  items.map((t) => {
+    const audioUrl = t.audioUrl
+      ? `${API_URL}/v1/tracks/proxy?url=${encodeURIComponent(t.audioUrl)}`
+      : t.audioUrl;
+    return { ...t, audioUrl };
+  });
+
 export async function fetchTracks(): Promise<TrackDTO[]> {
   const res = await fetch(`${API_URL}/v1/tracks`, { cache: "no-cache" });
   if (!res.ok) {
     throw new Error("Failed to fetch tracks");
   }
   const data = (await res.json()) as TrackDTO[];
-  return onlyPublished(data);
+  return withProxyAudio(onlyPublished(data));
 }
 
 async function safeJson<T>(res: Response): Promise<T | null> {
@@ -41,7 +49,7 @@ export async function fetchLatestTracks(limit = 8): Promise<TrackDTO[]> {
     const res = await fetch(`${API_URL}/v1/tracks/latest`, { cache: "no-store" });
     if (!res.ok) return [];
     const data = (await safeJson<TrackDTO[]>(res)) || [];
-    return onlyPublished(data).slice(0, limit);
+    return withProxyAudio(onlyPublished(data)).slice(0, limit);
   } catch {
     return [];
   }
@@ -52,7 +60,9 @@ export async function fetchTrack(id: string): Promise<TrackDTO | null> {
   try {
     const res = await fetch(`${API_URL}/v1/tracks/${id}`, { cache: "no-store" });
     if (!res.ok) return null;
-    return await safeJson<TrackDTO>(res);
+    const track = await safeJson<TrackDTO>(res);
+    if (!track) return null;
+    return withProxyAudio([track])[0];
   } catch {
     return null;
   }

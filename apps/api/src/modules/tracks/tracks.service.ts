@@ -1,11 +1,18 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException, forwardRef } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { CreateTrackDto } from "./dto/create-track.dto";
 import { UpdateTrackDto } from "./dto/update-track.dto";
 import { TrackDTO } from "@one-app/types";
+import { TagsService } from "../tags/tags.service";
+import { PlaylistsService } from "../playlists/playlists.service";
 
 @Injectable()
 export class TracksService {
+  constructor(
+    private readonly tagsService: TagsService,
+    @Inject(forwardRef(() => PlaylistsService)) private readonly playlistsService: PlaylistsService
+  ) {}
+
   private tracks: TrackDTO[] = [];
   private counter = 0;
   private normalized = false;
@@ -53,6 +60,9 @@ export class TracksService {
   }
 
   create(dto: CreateTrackDto): TrackDTO {
+    if (dto.genre) {
+      this.tagsService.ensureGenresFromList([dto.genre]);
+    }
     const id = this.generateId();
     const track: TrackDTO = {
       ...dto,
@@ -64,11 +74,17 @@ export class TracksService {
       popularity: (dto as any).popularity ?? 0
     };
     this.tracks.push(track);
+    this.playlistsService.addToLatest(track.id);
     return track;
   }
 
   createMany(dtos: CreateTrackDto[]): TrackDTO[] {
-    return dtos.map((dto) => this.create(dto));
+    dtos.forEach((dto) => {
+      if (dto.genre) this.tagsService.ensureGenresFromList([dto.genre]);
+    });
+    const created = dtos.map((dto) => this.create(dto));
+    created.forEach((t) => this.playlistsService.addToLatest(t.id));
+    return created;
   }
 
   update(id: string, dto: UpdateTrackDto): TrackDTO {
