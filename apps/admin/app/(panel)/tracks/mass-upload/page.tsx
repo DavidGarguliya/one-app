@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { adminApi } from "@/lib/api";
 import { Button, Card, Input } from "@one-app/ui";
 import { parseBlob } from "music-metadata-browser";
@@ -22,6 +22,7 @@ type ParsedTrack = {
     style?: string;
     mood?: string;
     occasion?: string;
+    duration?: number;
   };
 };
 
@@ -50,6 +51,8 @@ const blobToDataUrl = (data: Uint8Array, type: string) =>
   });
 
 export default function TracksMassUploadPage() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dirInputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<ParsedTrack[]>([]);
   const [parsing, setParsing] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -61,6 +64,15 @@ export default function TracksMassUploadPage() {
   const [genreOptions, setGenreOptions] = useState<string[]>([]);
 
   const parsedCount = useMemo(() => items.filter((i) => !i.loading && !i.error).length, [items]);
+
+  useEffect(() => {
+    // Enable directory selection across browsers
+    if (dirInputRef.current) {
+      dirInputRef.current.setAttribute("webkitdirectory", "true");
+      dirInputRef.current.setAttribute("directory", "true");
+      dirInputRef.current.setAttribute("mozdirectory", "true");
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -98,9 +110,14 @@ export default function TracksMassUploadPage() {
 
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList || !fileList.length) return;
+    const filtered = Array.from(fileList).filter((file) => {
+      const path = (file as any).webkitRelativePath || file.name;
+      return !path.split("/").some((seg: string) => seg.startsWith("."));
+    });
+    if (!filtered.length) return;
     setParsing(true);
     setStatus(null);
-    const files = Array.from(fileList);
+    const files = filtered;
 
     const next: ParsedTrack[] = files.map((file, idx) => ({
       id: `${file.name}-${idx}-${Date.now()}`,
@@ -119,6 +136,7 @@ export default function TracksMassUploadPage() {
         const artist = metadata.common.artist || "";
         const album = metadata.common.album || "";
         const year = metadata.common.year ? String(metadata.common.year) : metadata.common.date || "";
+        const duration = metadata.format?.duration ? Math.round(metadata.format.duration) : undefined;
         const cover = metadata.common.picture?.[0];
         const coverUrl = cover
           ? await blobToDataUrl(cover.data, cover.format || "image/jpeg")
@@ -140,7 +158,8 @@ export default function TracksMassUploadPage() {
                     genre: metadata.common.genre?.[0] || "",
                     audioUrl,
                     coverUrl,
-                    coverSource: coverUrl ? "embedded" : undefined
+                    coverSource: coverUrl ? "embedded" : undefined,
+                    duration
                   }
                 }
               : it
@@ -184,7 +203,8 @@ export default function TracksMassUploadPage() {
           year: it.data.year || undefined,
           style: it.data.style || undefined,
           mood: it.data.mood || undefined,
-          occasion: it.data.occasion || undefined
+          occasion: it.data.occasion || undefined,
+          duration: it.data.duration
         }));
 
       if (!payload.length) {
@@ -230,17 +250,40 @@ export default function TracksMassUploadPage() {
       </div>
 
       <Card className="space-y-3 p-4 rounded-2xl">
-        <label className="space-y-2 block">
-          <span className="text-sm text-[var(--fg)]/80">Выберите файлы</span>
-          <input
-            type="file"
-            multiple
-            accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/aiff,audio/x-aiff"
-            onChange={(e) => handleFiles(e.target.files)}
-            className="w-full rounded-xl bg-[color-mix(in srgb,var(--bg) 70%,transparent)] border border-[var(--border-strong)] px-3 py-2 text-[var(--fg)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-[var(--focus-ring)]"
-          />
-          <p className="text-xs text-[var(--muted)]">Поддержка >50 файлов за раз. Метаданные читаются локально в браузере.</p>
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" onClick={() => fileInputRef.current?.click()}>
+            Выбрать файлы
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => dirInputRef.current?.click()}>
+            Выбрать папку
+          </Button>
+          <span className="text-xs text-[var(--muted)]">
+            Поддержка >50 файлов. Папки разворачиваются рекурсивно, скрытые файлы и каталоги (начинающиеся с «.») игнорируются.
+          </span>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/aiff,audio/x-aiff"
+          onChange={(e) => handleFiles(e.target.files)}
+          className="hidden"
+        />
+        <input
+          ref={dirInputRef}
+          type="file"
+          multiple
+          accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/aiff,audio/x-aiff"
+          onChange={(e) => handleFiles(e.target.files)}
+          // allow full directory pick in all browsers
+          // @ts-expect-error non-standard attributes for directory selection
+          webkitdirectory="true"
+          // @ts-expect-error non-standard attributes for directory selection
+          directory="true"
+          // @ts-expect-error non-standard attributes for directory selection
+          mozdirectory="true"
+          className="hidden"
+        />
         {parsing && <p className="text-sm text-[var(--muted)]">Парсим файлы, пожалуйста, подождите…</p>}
         {status && <p className="text-sm text-[var(--muted)]">{status}</p>}
       </Card>

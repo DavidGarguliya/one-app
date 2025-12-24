@@ -84,7 +84,7 @@ export class PlaylistsService {
   ].map((title, idx) => ({
     id: `pl-${idx + 1}`,
     title,
-    description: "",
+    description: `${title} — подборка личных историй ProSound`,
     coverUrl: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=800&q=80",
     trackIds: [],
     status: "published",

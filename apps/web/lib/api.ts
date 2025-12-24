@@ -1,6 +1,8 @@
 import { TrackDTO, PlaylistDTO } from "@one-app/types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API_URL =
+  (process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
+const apiBase = API_URL || "";
 
 const onlyPublished = (items: TrackDTO[]) =>
   (items || []).filter((t) => !t.status || t.status === "published");
@@ -8,13 +10,13 @@ const onlyPublished = (items: TrackDTO[]) =>
 const withProxyAudio = (items: TrackDTO[]) =>
   items.map((t) => {
     const audioUrl = t.audioUrl
-      ? `${API_URL}/v1/tracks/proxy?url=${encodeURIComponent(t.audioUrl)}`
+      ? `${apiBase}/v1/tracks/proxy?url=${encodeURIComponent(t.audioUrl)}`
       : t.audioUrl;
     return { ...t, audioUrl };
   });
 
 export async function fetchTracks(): Promise<TrackDTO[]> {
-  const res = await fetch(`${API_URL}/v1/tracks`, { cache: "no-cache" });
+  const res = await fetch(`${apiBase}/v1/tracks`, { cache: "no-cache" });
   if (!res.ok) {
     throw new Error("Failed to fetch tracks");
   }
@@ -34,7 +36,7 @@ async function safeJson<T>(res: Response): Promise<T | null> {
 
 export async function fetchFeaturedTrack(): Promise<TrackDTO | null> {
   try {
-    const res = await fetch(`${API_URL}/v1/tracks/featured`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/v1/tracks/featured`, { cache: "no-store" });
     if (!res.ok) return null;
     const track = await safeJson<TrackDTO>(res);
     if (track && track.status && track.status !== "published") return null;
@@ -46,7 +48,7 @@ export async function fetchFeaturedTrack(): Promise<TrackDTO | null> {
 
 export async function fetchLatestTracks(limit = 8): Promise<TrackDTO[]> {
   try {
-    const res = await fetch(`${API_URL}/v1/tracks/latest`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/v1/tracks/latest`, { cache: "no-store" });
     if (!res.ok) return [];
     const data = (await safeJson<TrackDTO[]>(res)) || [];
     return withProxyAudio(onlyPublished(data)).slice(0, limit);
@@ -58,7 +60,7 @@ export async function fetchLatestTracks(limit = 8): Promise<TrackDTO[]> {
 
 export async function fetchTrack(id: string): Promise<TrackDTO | null> {
   try {
-    const res = await fetch(`${API_URL}/v1/tracks/${id}`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/v1/tracks/${id}`, { cache: "no-store" });
     if (!res.ok) return null;
     const track = await safeJson<TrackDTO>(res);
     if (!track) return null;
@@ -70,7 +72,7 @@ export async function fetchTrack(id: string): Promise<TrackDTO | null> {
 
 export async function fetchPlaylists(): Promise<PlaylistDTO[]> {
   try {
-    const res = await fetch(`${API_URL}/v1/playlists`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/v1/playlists`, { cache: "no-store" });
     if (!res.ok) return [];
     const data = (await safeJson<PlaylistDTO[]>(res)) || [];
     return data.filter(
@@ -86,7 +88,7 @@ export async function fetchPlaylists(): Promise<PlaylistDTO[]> {
 
 export async function fetchPlaylist(id: string): Promise<PlaylistDTO | null> {
   try {
-    const res = await fetch(`${API_URL}/v1/playlists/${id}`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/v1/playlists/${id}`, { cache: "no-store" });
     if (!res.ok) return null;
     return await safeJson<PlaylistDTO>(res);
   } catch {

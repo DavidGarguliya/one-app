@@ -70,6 +70,9 @@ export function TrackForm({ trackId, initial }: TrackFormProps) {
       const metadata = await parseBlob(file);
       if (metadata.common.title) setForm((f: any) => ({ ...f, title: metadata.common.title }));
       if (metadata.common.artist) setForm((f: any) => ({ ...f, artist: metadata.common.artist }));
+      if (metadata.format?.duration) {
+        setForm((f: any) => ({ ...f, duration: Math.round(metadata.format.duration) }));
+      }
       if (metadata.common.picture && metadata.common.picture[0]) {
         const pic = metadata.common.picture[0];
         const blob = new Blob([pic.data], { type: pic.format });
@@ -117,7 +120,8 @@ export function TrackForm({ trackId, initial }: TrackFormProps) {
         clientRequest: form.clientRequest || "",
         creationStory: form.creationStory || "",
         status: form.status || "draft",
-        coverSource: form.coverSource || (form.coverUrl ? "uploaded" : undefined)
+        coverSource: form.coverSource || (form.coverUrl ? "uploaded" : undefined),
+        duration: form.duration
       };
       if (trackId) {
         await adminApi.updateTrack(trackId, payload);
@@ -142,7 +146,12 @@ export function TrackForm({ trackId, initial }: TrackFormProps) {
         <div className="grid md:grid-cols-2 gap-4">
           <label className="space-y-2 text-sm text-[var(--fg)]/80">
             <span>Аудиофайл *</span>
-            <input type="file" accept="audio/*" onChange={(e) => e.target.files?.[0] && handleAudio(e.target.files[0])} className="w-full rounded-xl bg-[color-mix(in srgb,var(--bg) 70%,transparent)] border border-[var(--border-strong)] px-3 py-2 text-[var(--fg)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-[var(--focus-ring)]" />
+            <input
+              type="file"
+              accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/aiff,audio/x-aiff,audio/mp4,audio/x-m4a,audio/m4a,audio/*"
+              onChange={(e) => e.target.files?.[0] && handleAudio(e.target.files[0])}
+              className="w-full rounded-xl bg-[color-mix(in srgb,var(--bg) 70%,transparent)] border border-[var(--border-strong)] px-3 py-2 text-[var(--fg)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-[var(--focus-ring)]"
+            />
             <p className="text-xs text-[var(--muted)]">Название/исполнитель и обложка возьмутся из файла, если есть.</p>
           </label>
           <label className="space-y-2 text-sm text-[var(--fg)]/80">

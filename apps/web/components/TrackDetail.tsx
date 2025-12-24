@@ -7,10 +7,24 @@ import { TrackDTO } from "@one-app/types";
 import { PlayButton } from "./PlayButton";
 import { CtaButton } from "./CtaButton";
 import { usePlayerStore } from "@one-app/player";
+import { ArrowLeft } from "@phosphor-icons/react";
+import { useRouter } from "next/navigation";
 
 export default function TrackDetail({ track, related }: { track: TrackDTO; related: TrackDTO[] }) {
   const player = usePlayerStore();
+  const { currentTrack, isPlaying } = player;
   const ctaVisible = player.currentTrack?.id === track?.id && player.isPlaying;
+  const router = useRouter();
+  const relatedQueue = related
+    .filter((t) => (t as any).audioUrl || (t as any).url)
+    .map((t) => ({
+      id: t.id,
+      url: (t as any).audioUrl || (t as any).url,
+      title: t.title,
+      artist: t.artist || "",
+      coverUrl: t.coverUrl
+    })) as any[];
+
   return (
     <main className="px-4 pb-24 pt-10 md:px-8 lg:px-12 space-y-8">
       <div className="flex flex-col md:flex-row gap-6">
@@ -18,6 +32,18 @@ export default function TrackDetail({ track, related }: { track: TrackDTO; relat
           <Image src={track.coverUrl} alt={track.title} fill className="object-cover" sizes="240px" />
         </div>
         <div className="flex-1 space-y-3">
+          <button
+            className="inline-flex items-center gap-2 text-sm text-[var(--fg)]/70 hover:text-[var(--fg)] transition"
+            onClick={() => {
+              if (window.history.length > 1) {
+                router.back();
+              } else {
+                router.push("/catalog");
+              }
+            }}
+          >
+            <ArrowLeft size={16} /> Назад
+          </button>
           <p className="text-sm text-white/60">Трек</p>
           <h1 className="text-3xl font-semibold">{track.title}</h1>
           <p className="text-lg text-white/70">{track.artist}</p>
@@ -59,25 +85,64 @@ export default function TrackDetail({ track, related }: { track: TrackDTO; relat
         <h2 className="text-xl font-semibold mb-4">Похожие треки</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {related.map((item) => (
-            <Link key={item.id} href={`/tracks/${item.id}`} className="group">
-              <Card className="flex items-center gap-3 shadow-[0_12px_26px_rgba(0,0,0,0.14)] group-hover:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_70%,transparent),0_14px_28px_rgba(0,0,0,0.2)]">
-                <div className="relative h-12 w-12 rounded-xl bg-white/10 overflow-hidden">
-                  <Image src={item.coverUrl} alt={item.title} fill className="object-cover" sizes="48px" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium">{item.title}</p>
-                  <p className="text-sm text-white/60">{item.artist}</p>
-                </div>
-                <span className="text-sm text-white/60">
-                  {item.duration ? `${Math.floor(item.duration / 60)}:${`${Math.floor(item.duration % 60)}`.padStart(2, "0")}` : "—"}
-                </span>
-                <div className="ml-2 rounded-full bg-black/60 border border-[color-mix(in_srgb,var(--accent)_80%,transparent)] p-2 shadow-[0_0_0_1px_color-mix(in_srgb,var(--accent)_90%,transparent)]">
-                  <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 fill-[var(--accent-strong)]">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </div>
-              </Card>
-            </Link>
+            <Card key={item.id} interactive={false} className="group flex items-center gap-3 bg-transparent border-none py-2 transition-all duration-200 ease-out">
+              <div className="relative h-10 w-10 bg-white/10 overflow-hidden rounded-md">
+                <Image src={item.coverUrl} alt={item.title} fill className="object-cover" sizes="40px" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ids = relatedQueue.map((t) => t.id);
+                    const idx = ids.indexOf(item.id);
+                    if (currentTrack?.id === item.id) {
+                      isPlaying ? player.pause() : player.play();
+                    } else {
+                      player.setQueue(relatedQueue, Math.max(0, idx));
+                      player.play();
+                    }
+                  }}
+                  className={`absolute inset-0 z-10 flex items-center justify-center bg-black/45 transition-all duration-200 ease-out hover:bg-black/55 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] pointer-events-auto ${
+                    currentTrack?.id === item.id && isPlaying ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                  }`}
+                  aria-label={currentTrack?.id === item.id && isPlaying ? "Пауза" : "Играть"}
+                >
+                  {currentTrack?.id === item.id && isPlaying ? (
+                    <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 fill-[var(--accent-strong)]">
+                      <rect x="6" y="5" width="4" height="14" />
+                      <rect x="14" y="5" width="4" height="14" />
+                    </svg>
+                  ) : (
+                    <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4 fill-[var(--accent-strong)]">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <div className="flex-1 min-w-0">
+                <Link href={`/tracks/${item.id}`} className="block">
+                  <p
+                    className={`font-medium line-clamp-1 transition-colors ${
+                      currentTrack?.id === item.id ? "text-[var(--accent-strong)]" : "group-hover:text-[var(--accent-strong)]"
+                    }`}
+                  >
+                    {item.title}
+                  </p>
+                  <p
+                    className={`text-sm line-clamp-1 transition-colors ${
+                      currentTrack?.id === item.id ? "text-white/80" : "text-white/60 group-hover:text-white/75"
+                    }`}
+                  >
+                    {item.artist}
+                  </p>
+                </Link>
+              </div>
+              <span
+                className={`text-sm transition-colors ${
+                  currentTrack?.id === item.id ? "text-[var(--accent-strong)]" : "text-white/60 group-hover:text-white/75"
+                }`}
+              >
+                {item.duration ? `${Math.floor(item.duration / 60)}:${`${Math.floor(item.duration % 60)}`.padStart(2, "0")}` : "—"}
+              </span>
+            </Card>
           ))}
           {!related.length && <p className="text-sm text-white/60">Нет похожих треков.</p>}
         </div>

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put, Query, Delete, UploadedFile, UseInterceptors, Res, BadRequestException } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Put, Query, Delete, UploadedFile, UseInterceptors, Res, BadRequestException, Req } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { TracksService } from "./tracks.service";
 import { CreateTrackDto } from "./dto/create-track.dto";
@@ -58,15 +58,28 @@ export class TracksController {
   }
 
   @Get("proxy")
-  async proxy(@Query("url") url: string, @Res() res: Response) {
+  async proxy(@Query("url") url: string, @Req() req: any, @Res() res: Response) {
     if (!url) throw new BadRequestException("url is required");
-    const upstream = await fetch(url);
+    if (this.storageService.canHandleUrl(url)) {
+      await this.storageService.streamFromUrl(url, res, req.headers.range);
+      return;
+    }
+    const upstream = await fetch(url, {
+      headers: req.headers.range ? { Range: req.headers.range } : undefined
+    });
     if (!upstream.ok || !upstream.body) {
       res.status(upstream.status || 502).send("Failed to fetch source");
       return;
     }
     const contentType = upstream.headers.get("content-type") || "application/octet-stream";
-    res.setHeader("content-type", contentType);
+    const contentLength = upstream.headers.get("content-length");
+    const contentRange = upstream.headers.get("content-range");
+    const status = upstream.status;
+    if (contentType) res.setHeader("content-type", contentType);
+    if (contentLength) res.setHeader("content-length", contentLength);
+    if (contentRange) res.setHeader("content-range", contentRange);
+    res.setHeader("accept-ranges", "bytes");
+    if (status) res.status(status);
     const readable =
       typeof (Readable as any).fromWeb === "function"
         ? (Readable as any).fromWeb(upstream.body)

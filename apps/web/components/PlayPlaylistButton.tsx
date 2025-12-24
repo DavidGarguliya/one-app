@@ -2,26 +2,24 @@
 
 import { Button } from "@one-app/ui";
 import { usePlayerStore } from "@one-app/player";
-import { PlaylistDTO } from "@one-app/types";
-import { tracks } from "../lib/demoData";
+import { PlaylistDTO, TrackDTO } from "@one-app/types";
 
-function mapQueue(playlist: PlaylistDTO) {
-  return playlist.trackIds
-    .map((id) => tracks.find((t) => t.id === id))
-    .filter(Boolean)
-    .map((t) => ({
-      id: t!.id,
-      url: t!.audioUrl,
-      title: t!.title,
-      artist: t!.artist || "",
-      coverUrl: t!.coverUrl
-    }));
-}
-
-export function PlayPlaylistButton({ playlist }: { playlist: PlaylistDTO }) {
+export function PlayPlaylistButton({ playlist, tracks }: { playlist: PlaylistDTO; tracks: TrackDTO[] }) {
   const { setQueue, play, toggleShuffle } = usePlayerStore();
+  const mapQueue = () =>
+    playlist.trackIds
+      .map((id) => tracks.find((t) => t.id === id))
+      .filter(Boolean)
+      .map((t) => ({
+        id: t!.id,
+        url: (t as any).audioUrl || (t as any).url,
+        title: t!.title,
+        artist: t!.artist || "",
+        coverUrl: t!.coverUrl
+      }));
   const loadQueue = (shuffle = false) => {
-    const mapped = mapQueue(playlist);
+    const mapped = mapQueue();
+    if (!mapped.length) return;
     setQueue(mapped, 0);
     if (shuffle) toggleShuffle();
     play();
