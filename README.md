@@ -1,45 +1,95 @@
 # One App Audio (MVP)
 
-Hybrid SSR + SPA audio service with persistent player, admin panel, and NestJS API.
+Гибридный аудиосервис SSR + SPA с постоянным плеером, админ-панелью и API на NestJS.
 
-## Architecture summary
-- Next.js App Router for `/apps/web` (public) and `/apps/admin` (admin) with shared UI + player packages.
-- NestJS REST API (`/apps/api`) with JWT auth, typed DTOs, Swagger at `/docs`.
-- Shared packages: `@one-app/ui` (glass design system), `@one-app/types` (DTO), `@one-app/player` (headless engine + Zustand store).
-- Infra: docker-compose (Postgres, Redis, Meilisearch, MinIO).
+## Краткое описание архитектуры
 
-## Commands
+- **Next.js (App Router)**
+  - `/apps/web` — публичное веб-приложение
+  - `/apps/admin` — админ-панель
+  - Общие UI-компоненты и плеер вынесены в shared-пакеты
+
+- **NestJS API** (`/apps/api`)
+  - REST API
+  - JWT-аутентификация
+  - Типизированные DTO
+  - Swagger доступен по `/docs`
+
+- **Общие пакеты**
+  - `@one-app/ui` — glass design system
+  - `@one-app/types` — DTO и общие типы
+  - `@one-app/player` — headless-аудиодвижок + Zustand store
+
+- **Инфраструктура**
+  - docker-compose
+  - Postgres
+  - Redis
+  - Meilisearch
+  - MinIO (S3-совместимое хранилище)
+
+## Команды
+
 ```bash
 pnpm install
-pnpm dev:web      # runs web on 3000
-pnpm dev:admin    # runs admin on 3001
-pnpm dev:api      # runs NestJS API on 4000
-pnpm build        # build all
-pnpm lint         # lint all
-pnpm test         # vitest unit tests
+pnpm dev:web      # web-приложение на 3000
+pnpm dev:admin    # админка на 3001
+pnpm dev:api      # NestJS API на 4000
+pnpm build        # сборка всех приложений
+pnpm lint         # линтинг
+pnpm test         # unit-тесты (vitest)
 ```
 
-## Env
-- `apps/web/.env.example`:
-  - `NEXT_PUBLIC_API_URL=http://localhost:4000`
-- `apps/admin/.env.example`:
-  - `NEXT_PUBLIC_API_URL=http://localhost:4000`
-- `apps/api/.env.example`:
-  - `PORT=4000`, `DATABASE_URL=postgresql://oneapp:oneapp@localhost:5432/oneapp`, `S3_*`, `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
+## Переменные окружения
 
-## Running locally
+### `apps/web/.env.example`
+```env
+NEXT_PUBLIC_API_URL=http://localhost:4000
+```
+
+### `apps/admin/.env.example`
+```env
+NEXT_PUBLIC_API_URL=http://localhost:4000
+```
+
+### `apps/api/.env.example`
+```env
+PORT=4000
+DATABASE_URL=postgresql://oneapp:oneapp@localhost:5432/oneapp
+S3_*
+JWT_SECRET=
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
+```
+
+## Локальный запуск
+
 ```bash
 docker compose -f infrastructure/docker-compose.yml up -d
+
 psql $DATABASE_URL -f infrastructure/migrations/001_init.sql
 psql $DATABASE_URL -f infrastructure/seed/seed.sql
+
 pnpm dev:api
-pnpm dev:web  # localhost:3000
-pnpm dev:admin # localhost:3001
+pnpm dev:web    # http://localhost:3000
+pnpm dev:admin  # http://localhost:3001
 ```
 
-Swagger available at `http://localhost:4000/docs`.
+Swagger доступен по адресу:  
+http://localhost:4000/docs
 
-## Notes
-- Audio engine is headless and survives route changes via app shell layout. First gesture initializes audio to satisfy autoplay.
-- Admin uses glass UI, filters/search stubs ready for API wiring.
-- Storage via MinIO (S3 compatible). Use CDN/Cloudflare to enable HTTP Range for audio; set `Cache-Control: public, max-age=120, stale-while-revalidate=600` on media + JSON lists.
+## Примечания
+
+- Аудиодвижок является headless и сохраняется при смене роутов благодаря app-shell layout.  
+  Первое пользовательское действие инициализирует аудио для обхода ограничений autoplay.
+
+- Админ-панель использует glass UI.  
+  Фильтры и поиск подготовлены для последующего подключения API.
+
+- Хранение файлов реализовано через MinIO (S3-compatible).  
+  Рекомендуется использовать CDN (например, Cloudflare) с поддержкой HTTP Range для аудио.
+
+  Рекомендуемые заголовки:
+  ```
+  Cache-Control: public, max-age=120, stale-while-revalidate=600
+  ```
+  для медиафайлов и JSON-списков.
