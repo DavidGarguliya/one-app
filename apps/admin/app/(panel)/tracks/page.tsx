@@ -442,7 +442,7 @@ export default function TracksAdminPage() {
       {error && <p className="text-sm text-red-400">{error}</p>}
       {loading && <p className="text-sm text-[var(--muted)]">Загружаем треки…</p>}
 
-      <Card>
+      <Card className="transition-none hover:shadow-none hover:-translate-y-0">
         <datalist id="style-options">{styleOptions.map((opt) => <option key={opt} value={opt} />)}</datalist>
         <datalist id="mood-options">{moodOptions.map((opt) => <option key={opt} value={opt} />)}</datalist>
         <datalist id="occasion-options">{occasionOptions.map((opt) => <option key={opt} value={opt} />)}</datalist>

@@ -4,7 +4,7 @@ import { Button } from "@one-app/ui";
 import { usePlayerStore } from "@one-app/player";
 import { TrackDTO } from "@one-app/types";
 import { Play, Pause } from "@phosphor-icons/react";
-import { fetchLatestTracks } from "../lib/api";
+import { resolveAudioUrl, toAudioTrack } from "@/lib/audioSource";
 
 export function PlayButton({ track, queue }: { track: TrackDTO; queue?: TrackDTO[] }) {
   const { setQueue, play, pause, currentTrack, isPlaying } = usePlayerStore();
@@ -13,21 +13,20 @@ export function PlayButton({ track, queue }: { track: TrackDTO; queue?: TrackDTO
   return (
     <Button
       onClick={async () => {
-        // Берем плейлист "последние добавленные" для корректной навигации next/prev
-        const latest = await fetchLatestTracks(50).catch(() => []);
-        const baseList = latest.length ? latest : queue && queue.length ? queue : [track];
-        const list = baseList.map((t) => ({
-          id: t.id,
-          url: (t as any).audioUrl || (t as any).url,
-          title: t.title,
-          artist: t.artist || "",
-          coverUrl: t.coverUrl
-        })) as any[];
+        const baseList = queue && queue.length ? queue : [track];
+        const withUrls = await Promise.all(
+          baseList.map(async (t) => {
+            const url = await resolveAudioUrl(t);
+            return url ? toAudioTrack(t, url) : null;
+          })
+        );
+        const list = withUrls.filter(Boolean) as any[];
+        if (!list.length) return;
         const startIndex = list.findIndex((t) => t.id === track.id);
         if (isCurrent) {
           isPlaying ? pause() : play();
         } else {
-          setQueue(list, Math.max(0, startIndex >= 0 ? startIndex : 0));
+          setQueue(list, Math.max(0, startIndex >= 0 ? startIndex : 0), { type: "custom" });
           play();
         }
       }}

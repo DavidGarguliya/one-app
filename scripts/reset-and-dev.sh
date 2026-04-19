@@ -17,5 +17,5 @@ pnpm install
 echo "==> Starting api, web, admin (Ctrl+C to stop all)"
 pnpm dlx concurrently -n api,web,admin -c "cyan,magenta,green" \
   "S3_INLINE=1 pnpm --filter api dev" \
-  "pnpm --filter web dev" \
-  "pnpm --filter admin dev"
+  "NEXT_PUBLIC_API_URL=http://localhost:4000 pnpm --filter web dev" \
+  "NEXT_PUBLIC_API_URL=http://localhost:4000 pnpm --filter admin dev"

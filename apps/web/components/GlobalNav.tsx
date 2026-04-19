@@ -11,7 +11,10 @@ import { MobileMenu } from "./MobileMenu";
 import { CtaButton } from "./CtaButton";
 import { useSearchStore } from "../lib/searchStore";
 
-const links = [
+type NavHref = Parameters<typeof Link>[0]["href"];
+type NavItem = { href: NavHref; label: string; icon: typeof House };
+
+const links: NavItem[] = [
   { href: "/", label: "Главная", icon: House },
   { href: "/catalog", label: "Каталог", icon: Compass },
   { href: "/playlists", label: "Плейлисты", icon: SquaresFour }
@@ -47,7 +50,7 @@ export function GlobalNav() {
           <nav className="hidden md:flex items-center gap-2 text-sm text-[var(--fg)]/80">
             {links.map(({ href, label, icon: Icon }) => (
               <Link
-                key={href}
+                key={label}
                 href={href}
                 className={clsx(
                   "flex items-center gap-2 rounded-full px-3 py-2 transition",

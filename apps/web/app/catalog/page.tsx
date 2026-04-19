@@ -32,10 +32,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: { ge
       </div>
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-[var(--fg)]">Жанры</h2>
-        <div
-          className="grid gap-4 justify-items-center"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
-        >
+        <div className="flex flex-wrap gap-4 justify-start">
           {genres.map((g) => {
             const coversSrc = g.items.slice(-4).map((t) => t.coverUrl).filter(Boolean) as string[];
             const covers = coversSrc.length
@@ -45,7 +42,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: { ge
               <Link
                 key={g.name}
                 href={`/genres/${encodeURIComponent(g.name)}`}
-                className="relative w-full max-w-[256px] aspect-square rounded-2xl border border-[var(--border-strong)] bg-[var(--card)] shadow-[var(--shadow-card)] overflow-hidden block"
+                className="relative w-full max-w-[256px] aspect-square rounded-2xl border border-[var(--border-strong)] bg-[var(--card)] shadow-[var(--shadow-card)] overflow-hidden block transition-all duration-200 ease-out hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.25)] hover:border-[var(--accent)]"
               >
                 <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
                   {[0, 1, 2, 3].map((idx) => (

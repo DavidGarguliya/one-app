@@ -5,15 +5,33 @@ import { usePlayerStore } from "@one-app/player";
 import { TrackDTO } from "@one-app/types";
 import { GiftEnvelope } from "@/components/GiftEnvelope";
 import { GiftConfetti } from "@/components/GiftConfetti";
+import { resolveAudioUrl, toAudioTrack } from "@/lib/audioSource";
 
 export function GiftPlayerClient({ track, shareUrl }: { track: TrackDTO; shareUrl: string }) {
   const { setQueue, play } = usePlayerStore();
 
+  const pickPlayableUrl = async (t: TrackDTO) => {
+    const direct = t.playbackUrl || t.audioUrl;
+    const isPlayable = (url?: string | null) => !!url && /\.(mp3|m4a)(\?|$)/i.test(url);
+    if (isPlayable(direct)) return direct!;
+    const resolved = await resolveAudioUrl(t);
+    return isPlayable(resolved) ? resolved : null;
+  };
+
   useEffect(() => {
     if (track) {
-      setQueue([{ ...track, url: track.audioUrl }] as any, 0);
+      (async () => {
+        const url = await pickPlayableUrl(track);
+        if (!url) return;
+        setQueue([toAudioTrack(track, url) as any], 0);
+      })();
     }
   }, [track, setQueue]);
+
+  const downloads = [
+    track.downloadWavUrl ? { label: "Скачать WAV", url: track.downloadWavUrl } : null,
+    track.downloadAiffUrl ? { label: "Скачать AIFF", url: track.downloadAiffUrl } : null
+  ].filter(Boolean) as { label: string; url: string }[];
 
   return (
     <main className="min-h-screen relative overflow-hidden bg-black text-white flex flex-col items-center justify-center px-4 py-12">
@@ -41,6 +59,23 @@ export function GiftPlayerClient({ track, shareUrl }: { track: TrackDTO; shareUr
         >
           Скопировать ссылку на подарок
         </button>
+        {downloads.length > 0 && (
+          <div className="mt-4 flex flex-col gap-2 items-center text-sm text-white/80">
+            <p className="text-white/70">Скачать оригинал</p>
+            <div className="flex gap-2 flex-wrap justify-center">
+              {downloads.map((d) => (
+                <a
+                  key={d.url}
+                  href={d.url}
+                  download
+                  className="px-3 py-1 rounded-full bg-white/10 border border-white/10 hover:bg-white/15 transition"
+                >
+                  {d.label}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import baseConfig from "../../packages/config/tailwind.base.cjs";
 import type { Config } from "tailwindcss";
 

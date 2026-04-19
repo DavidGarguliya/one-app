@@ -6,6 +6,8 @@ import { Card } from "@one-app/ui";
 import { PlaylistDTO, TrackDTO } from "@one-app/types";
 import { usePlayerStore } from "@one-app/player";
 import { Play, Shuffle } from "@phosphor-icons/react";
+import { resolveAudioUrl, toAudioTrack } from "@/lib/audioSource";
+const placeholder = "/cover-placeholder.svg";
 
 export default function PlaylistView({ playlist, tracks }: { playlist: PlaylistDTO; tracks: TrackDTO[] }) {
   const heroTracks = tracks.slice(-4).reverse();
@@ -19,21 +21,24 @@ export default function PlaylistView({ playlist, tracks }: { playlist: PlaylistD
   const { currentTrack, isPlaying } = player;
   const router = useRouter();
 
-  const buildQueue = () =>
-    tracks
-      .filter((t) => (t as any).audioUrl || (t as any).url)
-      .map((t) => ({
-        id: t.id,
-        url: (t as any).audioUrl || (t as any).url,
-        title: t.title,
-        artist: t.artist || "",
-        coverUrl: t.coverUrl
-      })) as any[];
+  const buildQueue = async () => {
+    const resolved = await Promise.all(
+      tracks
+        .filter((t) => t?.id)
+        .map(async (t) => {
+          const url = await resolveAudioUrl(t);
+          if (!url) return null;
+          const trackWithUrl = toAudioTrack(t, url);
+          return { ...trackWithUrl, coverUrl: trackWithUrl.coverUrl || placeholder };
+        })
+    );
+    return resolved.filter(Boolean) as any[];
+  };
 
-  const handlePlay = (shuffle = false) => {
-    const queue = buildQueue();
+  const handlePlay = async (shuffle = false) => {
+    const queue = await buildQueue();
     if (!queue.length) return;
-    player.setQueue(queue, 0);
+    player.setQueue(queue, 0, { type: "playlist", id: playlist.id });
     if (shuffle && !player.shuffle) player.toggleShuffle();
     if (!shuffle && player.shuffle) player.toggleShuffle();
     player.play();
@@ -96,17 +101,18 @@ export default function PlaylistView({ playlist, tracks }: { playlist: PlaylistD
             className="group flex items-center gap-3 bg-transparent border-none py-2 transition-all duration-200 ease-out"
           >
             <div className="relative h-10 w-10 bg-white/10 overflow-hidden rounded-md">
-              <Image src={track.coverUrl} alt={track.title} fill className="object-cover" sizes="40px" />
+              <Image src={track.coverUrl || placeholder} alt={track.title} fill className="object-cover" sizes="40px" />
               <button
                 type="button"
-                onClick={() => {
-                  const queue = buildQueue();
+                onClick={async () => {
+                  const queue = await buildQueue();
+                  if (!queue.length) return;
                   const ids = queue.map((t) => t.id);
                   const idx = ids.indexOf(track.id);
                   if (currentTrack?.id === track.id) {
                     isPlaying ? player.pause() : player.play();
                   } else {
-                    player.setQueue(queue, Math.max(0, idx));
+                    player.setQueue(queue, Math.max(0, idx), { type: "playlist", id: playlist.id });
                     player.play();
                   }
                 }}

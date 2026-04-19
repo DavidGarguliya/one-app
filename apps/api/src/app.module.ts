@@ -10,6 +10,7 @@ import { StylesModule } from "./modules/styles/styles.module";
 import { MoodsModule } from "./modules/moods/moods.module";
 import { OccasionsModule } from "./modules/occasions/occasions.module";
 import { RecommendationsModule } from "./modules/recommendations/recommendations.module";
+import { LyricsModule } from "./modules/lyrics/lyrics.module";
 
 @Module({
   imports: [
@@ -22,7 +23,8 @@ import { RecommendationsModule } from "./modules/recommendations/recommendations
     StylesModule,
     MoodsModule,
     OccasionsModule,
-    RecommendationsModule
+    RecommendationsModule,
+    LyricsModule
   ],
   providers: [StorageService]
 })

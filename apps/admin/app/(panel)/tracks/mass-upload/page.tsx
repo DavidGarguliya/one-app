@@ -26,29 +26,158 @@ type ParsedTrack = {
   };
 };
 
-const uploadFile = async (file: Blob, fileName: string) => {
-  const form = new FormData();
-  form.append("file", file, fileName);
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-  const res = await fetch(`${apiUrl}/v1/tracks/upload`, {
-    method: "POST",
-    body: form
+const MAX_AUDIO_INLINE_BYTES = 150 * 1024 * 1024; // ~150MB raw (~200MB base64)
+const INLINE_SAFETY_BYTES = 120 * 1024 * 1024; // выше — лучше грузить на API, чтобы избежать Invalid string length
+const isLossy = (mime: string) => /(mp3|mpeg|m4a|mp4)/i.test(mime);
+
+const readAsDataUrl = (blob: Blob, mimeOverride?: string) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+    const source = mimeOverride ? new Blob([blob], { type: mimeOverride }) : blob;
+    reader.onload = () => resolve(reader.result as string);
+    reader.readAsDataURL(source);
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || "Не удалось загрузить файл");
+
+const guessAudioMime = (file: File) => {
+  if (file.type) return file.type;
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "m4a":
+      return "audio/x-m4a";
+    case "mp4":
+      return "audio/mp4";
+    case "mp3":
+      return "audio/mpeg";
+    case "wav":
+      return "audio/wav";
+    case "aiff":
+    case "aif":
+      return "audio/aiff";
+    default:
+      return "application/octet-stream";
   }
-  const json = await res.json();
-  return json.url as string;
 };
 
 const blobToDataUrl = (data: Uint8Array, type: string) =>
   new Promise<string>((resolve) => {
-    const blob = new Blob([data], { type });
+    // Create a detached copy to guarantee ArrayBuffer (not SharedArrayBuffer).
+    const safeCopy = new Uint8Array(data).buffer;
+    const blob = new Blob([safeCopy], { type });
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
     reader.readAsDataURL(blob);
   });
+
+const uploadFile = async (file: Blob, fileName: string) => {
+  const form = new FormData();
+  form.append("file", file, fileName);
+  const bases = [
+    (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, ""),
+    typeof window !== "undefined" ? window.location.origin : "",
+    "http://localhost:4000"
+  ].filter(Boolean);
+  const tried: string[] = [];
+  for (const base of bases) {
+    const target = `${base}/v1/tracks/upload`;
+    tried.push(target);
+    try {
+      const res = await fetch(target, { method: "POST", body: form });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Upload failed (${res.status})`);
+      }
+      const json = await res.json();
+      const direct = json.originalUrl || json.url;
+      if (!direct) throw new Error("Сервер не вернул ссылку на файл");
+      return direct as string;
+    } catch (err) {
+      // try next base
+      continue;
+    }
+  }
+  throw new Error(`Не удалось загрузить файл на сервер (${tried.join(", ")})`);
+};
+
+const readAsArrayBuffer = (file: File) =>
+  new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.readAsArrayBuffer(file);
+  });
+
+const encodeWav = (audioBuffer: AudioBuffer) => {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const length = audioBuffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + length * blockAlign);
+  const view = new DataView(buffer);
+
+  // RIFF header
+  let offset = 0;
+  const writeString = (s: string) => {
+    for (let i = 0; i < s.length; i += 1) view.setUint8(offset + i, s.charCodeAt(i));
+    offset += s.length;
+  };
+  writeString("RIFF");
+  view.setUint32(offset, 36 + length * blockAlign, true); offset += 4; // chunk size
+  writeString("WAVE");
+
+  // fmt chunk
+  writeString("fmt ");
+  view.setUint32(offset, 16, true); offset += 4; // Subchunk1Size
+  view.setUint16(offset, 1, true); offset += 2; // PCM
+  view.setUint16(offset, numChannels, true); offset += 2;
+  view.setUint32(offset, sampleRate, true); offset += 4;
+  view.setUint32(offset, sampleRate * blockAlign, true); offset += 4; // byte rate
+  view.setUint16(offset, blockAlign, true); offset += 2;
+  view.setUint16(offset, bytesPerSample * 8, true); offset += 2;
+
+  // data chunk
+  writeString("data");
+  view.setUint32(offset, length * blockAlign, true); offset += 4;
+
+  const channelData = Array.from({ length: numChannels }, (_, ch) => audioBuffer.getChannelData(ch));
+  for (let i = 0; i < length; i += 1) {
+    for (let ch = 0; ch < numChannels; ch += 1) {
+      const sample = Math.max(-1, Math.min(1, channelData[ch][i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([view], { type: "audio/wav" });
+};
+
+const toBrowserPlayableDataUrl = async (file: File, fallbackMime: string) => {
+  if (typeof window === "undefined") return readAsDataUrl(file, fallbackMime);
+  const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+  if (!AudioCtx) return readAsDataUrl(file, fallbackMime);
+  try {
+    const arr = await readAsArrayBuffer(file);
+    const ctx = new AudioCtx();
+    const decoded = await ctx.decodeAudioData(arr.slice(0));
+    const wav = encodeWav(decoded);
+    const dataUrl = await readAsDataUrl(wav, "audio/wav");
+    if (typeof ctx.close === "function") ctx.close();
+    return dataUrl;
+  } catch (err) {
+    console.warn("Не удалось перекодировать в WAV, используем оригинал", err);
+    return readAsDataUrl(file, fallbackMime);
+  }
+};
+
+const prepareAudioUrl = async (file: File, mime: string, shouldUpload: boolean) => {
+  if (shouldUpload) {
+    // Для AIFF/m4a и крупных файлов не делаем inline fallback, чтобы избежать Invalid string length.
+    return uploadFile(file, file.name);
+  }
+  if (isLossy(mime)) return readAsDataUrl(file, mime);
+  return toBrowserPlayableDataUrl(file, mime);
+};
 
 export default function TracksMassUploadPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -58,10 +187,15 @@ export default function TracksMassUploadPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [publishStatus, setPublishStatus] = useState<"draft" | "published">("published");
-  const [styleOptions, setStyleOptions] = useState<string[]>([]);
-  const [moodOptions, setMoodOptions] = useState<string[]>([]);
-  const [occasionOptions, setOccasionOptions] = useState<string[]>([]);
-  const [genreOptions, setGenreOptions] = useState<string[]>([]);
+  const defaultStyles = ["Pop", "Rock", "Lo-fi", "Acoustic"];
+  const defaultMoods = ["Happy", "Calm", "Sad", "Romantic"];
+  const defaultOccasions = ["Birthday", "Wedding", "Anniversary", "Thank you"];
+  const defaultGenres = ["Pop", "Rock", "Electronic", "Classical", "Jazz"];
+
+  const [styleOptions, setStyleOptions] = useState<string[]>(defaultStyles);
+  const [moodOptions, setMoodOptions] = useState<string[]>(defaultMoods);
+  const [occasionOptions, setOccasionOptions] = useState<string[]>(defaultOccasions);
+  const [genreOptions, setGenreOptions] = useState<string[]>(defaultGenres);
 
   const parsedCount = useMemo(() => items.filter((i) => !i.loading && !i.error).length, [items]);
 
@@ -130,8 +264,44 @@ export default function TracksMassUploadPage() {
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
       try {
+        if (file.size > MAX_AUDIO_INLINE_BYTES) {
+          const mb = Math.round((file.size / 1024 / 1024) * 10) / 10;
+          setItems((prev) =>
+            prev.map((it, idx) =>
+              idx === i
+                ? {
+                    ...it,
+                    loading: false,
+                    error: `Файл ${mb} МБ слишком большой для inline (лимит ~${Math.round(
+                      MAX_AUDIO_INLINE_BYTES / 1024 / 1024
+                    )} МБ)`
+                  }
+                : it
+            )
+          );
+          continue;
+        }
         const metadata = await parseBlob(file);
-        const audioUrl = await uploadFile(file, file.name);
+        const audioMime = guessAudioMime(file);
+        const shouldUpload = /(aiff|m4a|mp4)/i.test(audioMime) || file.size > INLINE_SAFETY_BYTES;
+        let audioUrl: string;
+        try {
+          audioUrl = await prepareAudioUrl(file, audioMime, shouldUpload);
+        } catch (err: any) {
+          const reason = err?.message || "Браузер не смог подготовить аудио";
+          setItems((prev) =>
+            prev.map((it, idx) =>
+              idx === i
+                ? {
+                    ...it,
+                    loading: false,
+                    error: `${reason}. Файл может быть слишком большим для inline.`
+                  }
+                : it
+            )
+          );
+          continue;
+        }
         const title = metadata.common.title || file.name.replace(/\.[^.]+$/, "");
         const artist = metadata.common.artist || "";
         const album = metadata.common.album || "";
@@ -254,18 +424,18 @@ export default function TracksMassUploadPage() {
           <Button type="button" onClick={() => fileInputRef.current?.click()}>
             Выбрать файлы
           </Button>
-          <Button type="button" variant="secondary" onClick={() => dirInputRef.current?.click()}>
+          <Button type="button" variant="ghost" onClick={() => dirInputRef.current?.click()}>
             Выбрать папку
           </Button>
           <span className="text-xs text-[var(--muted)]">
-            Поддержка >50 файлов. Папки разворачиваются рекурсивно, скрытые файлы и каталоги (начинающиеся с «.») игнорируются.
+            Поддержка более 50 файлов. Папки разворачиваются рекурсивно, скрытые файлы и каталоги (начинающиеся с «.») игнорируются.
           </span>
         </div>
         <input
           ref={fileInputRef}
           type="file"
           multiple
-          accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/aiff,audio/x-aiff"
+          accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/aiff,audio/x-aiff,audio/mp4,audio/x-m4a,audio/m4a,audio/*"
           onChange={(e) => handleFiles(e.target.files)}
           className="hidden"
         />
@@ -273,14 +443,12 @@ export default function TracksMassUploadPage() {
           ref={dirInputRef}
           type="file"
           multiple
-          accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/aiff,audio/x-aiff"
+          accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/aiff,audio/x-aiff,audio/mp4,audio/x-m4a,audio/m4a,audio/*"
           onChange={(e) => handleFiles(e.target.files)}
           // allow full directory pick in all browsers
           // @ts-expect-error non-standard attributes for directory selection
           webkitdirectory="true"
-          // @ts-expect-error non-standard attributes for directory selection
           directory="true"
-          // @ts-expect-error non-standard attributes for directory selection
           mozdirectory="true"
           className="hidden"
         />
@@ -401,7 +569,7 @@ export default function TracksMassUploadPage() {
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file) return;
-                        const coverUrl = await readAsDataUrl(file);
+                        const coverUrl = await readAsDataUrl(file, file.type || undefined);
                         updateItem(item.id, { coverUrl, coverSource: "uploaded" });
                       }}
                       className="w-full rounded-xl bg-[color-mix(in srgb,var(--bg) 70%,transparent)] border border-[var(--border-strong)] px-3 py-2 text-[var(--fg)] placeholder:text-[var(--muted)] focus:outline-none focus:ring-[var(--focus-ring)]"

@@ -1,11 +1,50 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+const API = (() => {
+  const candidates = [
+    process.env.NEXT_PUBLIC_API_URL,
+    typeof window !== "undefined" ? window.location.origin : "",
+    "http://localhost:4000"
+  ].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    try {
+      const parsed = new URL(candidate);
+      const basePath = parsed.pathname.replace(/\/$/, "");
+      return `${parsed.origin}${basePath}`;
+    } catch {
+      // try next candidate
+    }
+  }
+  throw new Error("API base URL is not configured");
+})();
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${url}`, {
-    cache: "no-store",
-    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
-    ...init
-  });
+  let res: Response | null = null;
+  let lastErr: any = null;
+  const targets = (() => {
+    if (/^https?:\/\//i.test(url)) return [url];
+    const bases = [
+      API,
+      process.env.NEXT_PUBLIC_API_URL,
+      typeof window !== "undefined" ? window.location.origin : "",
+      "http://localhost:4000"
+    ].filter(Boolean) as string[];
+    return Array.from(new Set(bases.map((b) => `${b}${url}`)));
+  })();
+  for (const target of targets) {
+    try {
+      res = await fetch(target, {
+        cache: "no-store",
+        headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+        ...init
+      });
+      break;
+    } catch (err: any) {
+      lastErr = err;
+      res = null;
+    }
+  }
+  if (!res) {
+    throw new Error(`Не удалось обратиться к API (пробовали: ${targets.join(", ")}): ${lastErr?.message || lastErr}`);
+  }
   if (!res.ok) {
     const msg = await res.text();
     throw new Error(msg || `Ошибка ${res.status}`);
@@ -15,7 +54,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const adminApi = {
   listTracks: () => request<any[]>("/v1/tracks"),
-  getTrack: (id: string) => request<any>(`/v1/tracks/${id}`),
+  getTrack: (id: string, opts?: { slim?: boolean }) =>
+    request<any>(`/v1/tracks/${id}${opts?.slim ? "?slim=1" : ""}`),
   createTrack: (body: any) => request<any>("/v1/tracks", { method: "POST", body: JSON.stringify(body) }),
   createTracksBulk: (items: any[]) =>
     request<any>("/v1/tracks/bulk", { method: "POST", body: JSON.stringify(items) }),
@@ -38,5 +78,10 @@ export const adminApi = {
   listOccasions: () => request<any[]>("/v1/occasions"),
   createOccasion: (body: any) => request<any>("/v1/occasions", { method: "POST", body: JSON.stringify(body) }),
   deleteOccasion: (id: string) => request<any>(`/v1/occasions/${id}`, { method: "DELETE" }),
-  listUsers: () => request<any[]>("/v1/users")
+  listUsers: () => request<any[]>("/v1/users"),
+  requestLyrics: (trackId: string, body: any) =>
+    request<any>(`/v1/lyrics/generate/${trackId}`, { method: "POST", body: JSON.stringify(body || {}) }),
+  lyricsStatus: (trackId: string) => request<any>(`/v1/lyrics/status/${trackId}`),
+  lyricsResult: (trackId: string) => request<any>(`/v1/lyrics/result/${trackId}`),
+  lyricsDownloadUrl: (trackId: string) => `${API}/v1/lyrics/download/${trackId}/lrc`
 };

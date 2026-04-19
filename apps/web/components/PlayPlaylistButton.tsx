@@ -3,24 +3,27 @@
 import { Button } from "@one-app/ui";
 import { usePlayerStore } from "@one-app/player";
 import { PlaylistDTO, TrackDTO } from "@one-app/types";
+import { resolveAudioUrl, toAudioTrack } from "@/lib/audioSource";
 
 export function PlayPlaylistButton({ playlist, tracks }: { playlist: PlaylistDTO; tracks: TrackDTO[] }) {
   const { setQueue, play, toggleShuffle } = usePlayerStore();
-  const mapQueue = () =>
-    playlist.trackIds
-      .map((id) => tracks.find((t) => t.id === id))
-      .filter(Boolean)
-      .map((t) => ({
-        id: t!.id,
-        url: (t as any).audioUrl || (t as any).url,
-        title: t!.title,
-        artist: t!.artist || "",
-        coverUrl: t!.coverUrl
-      }));
-  const loadQueue = (shuffle = false) => {
-    const mapped = mapQueue();
+
+  const mapQueue = async () => {
+    const resolved = await Promise.all(
+      playlist.trackIds.map(async (id) => {
+        const t = tracks.find((tr) => tr.id === id);
+        if (!t) return null;
+        const url = await resolveAudioUrl(t);
+        if (!url) return null;
+        return toAudioTrack(t, url);
+      })
+    );
+    return resolved.filter(Boolean) as any[];
+  };
+  const loadQueue = async (shuffle = false) => {
+    const mapped = await mapQueue();
     if (!mapped.length) return;
-    setQueue(mapped, 0);
+    setQueue(mapped, 0, { type: "playlist", id: playlist.id });
     if (shuffle) toggleShuffle();
     play();
   };

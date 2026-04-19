@@ -4,7 +4,7 @@ import React from "react";
 import clsx from "classnames";
 import { motion } from "framer-motion";
 
-type CardProps = React.HTMLAttributes<HTMLDivElement> & {
+type CardProps = React.ComponentProps<typeof motion.div> & {
   interactive?: boolean;
 };
 

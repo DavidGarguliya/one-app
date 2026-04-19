@@ -1,27 +1,41 @@
 import { TrackDTO, PlaylistDTO } from "@one-app/types";
 
-const API_URL =
-  (process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
-const apiBase = API_URL || "";
+export const apiBase = (() => {
+  const candidates = [
+    process.env.NEXT_PUBLIC_API_URL,
+    typeof window !== "undefined" ? window.location.origin : "",
+    "http://localhost:4000"
+  ].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    try {
+      const parsed = new URL(candidate);
+      const basePath = parsed.pathname.replace(/\/$/, "");
+      return `${parsed.origin}${basePath}`;
+    } catch {
+      // try next
+    }
+  }
+  return "";
+})();
 
 const onlyPublished = (items: TrackDTO[]) =>
   (items || []).filter((t) => !t.status || t.status === "published");
 
 const withProxyAudio = (items: TrackDTO[]) =>
   items.map((t) => {
-    const audioUrl = t.audioUrl
-      ? `${apiBase}/v1/tracks/proxy?url=${encodeURIComponent(t.audioUrl)}`
-      : t.audioUrl;
+    if (!t.audioUrl) return t;
+    const audioUrl = `${apiBase}/v1/tracks/proxy?url=${encodeURIComponent(t.audioUrl)}`;
     return { ...t, audioUrl };
   });
 
-export async function fetchTracks(): Promise<TrackDTO[]> {
-  const res = await fetch(`${apiBase}/v1/tracks`, { cache: "no-cache" });
+export async function fetchTracks({ slim = true }: { slim?: boolean } = {}): Promise<TrackDTO[]> {
+  const res = await fetch(`${apiBase}/v1/tracks${slim ? "?slim=1" : ""}`, { cache: "no-cache" });
   if (!res.ok) {
     throw new Error("Failed to fetch tracks");
   }
   const data = (await res.json()) as TrackDTO[];
-  return withProxyAudio(onlyPublished(data));
+  const published = onlyPublished(data);
+  return slim ? published : withProxyAudio(published);
 }
 
 async function safeJson<T>(res: Response): Promise<T | null> {
@@ -34,36 +48,41 @@ async function safeJson<T>(res: Response): Promise<T | null> {
   }
 }
 
-export async function fetchFeaturedTrack(): Promise<TrackDTO | null> {
+export async function fetchFeaturedTrack({ slim = true }: { slim?: boolean } = {}): Promise<TrackDTO | null> {
   try {
-    const res = await fetch(`${apiBase}/v1/tracks/featured`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/v1/tracks/featured${slim ? "?slim=1" : ""}`, { cache: "no-store" });
     if (!res.ok) return null;
     const track = await safeJson<TrackDTO>(res);
     if (track && track.status && track.status !== "published") return null;
-    return track;
+    return slim && track ? { ...track, audioUrl: "" } : track;
   } catch {
     return null;
   }
 }
 
-export async function fetchLatestTracks(limit = 8): Promise<TrackDTO[]> {
+export async function fetchLatestTracks(limit = 8, slim = true): Promise<TrackDTO[]> {
   try {
-    const res = await fetch(`${apiBase}/v1/tracks/latest`, { cache: "no-store" });
+    const params = new URLSearchParams();
+    params.set("limit", String(limit));
+    if (slim) params.set("slim", "1");
+    const res = await fetch(`${apiBase}/v1/tracks/latest?${params.toString()}`, { cache: "no-store" });
     if (!res.ok) return [];
-    const data = (await safeJson<TrackDTO[]>(res)) || [];
-    return withProxyAudio(onlyPublished(data)).slice(0, limit);
+    const data = onlyPublished((await safeJson<TrackDTO[]>(res)) || []);
+    const payload = slim ? data : withProxyAudio(data);
+    return payload.slice(0, limit);
   } catch {
     return [];
   }
 }
 
 
-export async function fetchTrack(id: string): Promise<TrackDTO | null> {
+export async function fetchTrack(id: string, { slim = true }: { slim?: boolean } = {}): Promise<TrackDTO | null> {
   try {
-    const res = await fetch(`${apiBase}/v1/tracks/${id}`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/v1/tracks/${id}${slim ? "?slim=1" : ""}`, { cache: "no-store" });
     if (!res.ok) return null;
     const track = await safeJson<TrackDTO>(res);
     if (!track) return null;
+    if (slim) return track;
     return withProxyAudio([track])[0];
   } catch {
     return null;

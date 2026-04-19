@@ -16,6 +16,9 @@ export interface TrackDTO {
   album?: string;
   duration: number;
   audioUrl: string;
+  playbackUrl?: string; // Опциональный URL для веб-плеера (mp3/m4a)
+  downloadWavUrl?: string;
+  downloadAiffUrl?: string;
   coverUrl: string;
   tags: TagDTO[];
   style?: string;
@@ -30,6 +33,10 @@ export interface TrackDTO {
   createdAt: string;
   publishedAt?: string;
   popularity?: number;
+  lyricsLrcUrl?: string | null;
+  lyricsJsonUrl?: string | null;
+  lyricsProvider?: LyricsProvider;
+  lyricsUpdatedAt?: string;
 }
 
 export interface PlaylistDTO {
@@ -89,4 +96,38 @@ export interface Paginated<T> {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export type LyricsProvider = "deepgram" | "assemblyai" | "whisper";
+
+export type LyricsJobStatus = "queued" | "processing" | "done" | "error";
+
+export interface LyricsWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface LyricsPayload {
+  language: string;
+  duration: number;
+  words: LyricsWord[];
+}
+
+export interface LyricsJob {
+  id: string;
+  trackId: string;
+  status: LyricsJobStatus;
+  provider: LyricsProvider;
+  language: string;
+  resultJsonUrl: string | null;
+  lrcUrl: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LyricsResult {
+  job: LyricsJob;
+  payload?: LyricsPayload;
 }

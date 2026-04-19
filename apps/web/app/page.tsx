@@ -3,7 +3,7 @@ import { tracks as demoTracks } from "../lib/demoData";
 import { HomeClient } from "../components/HomeClient";
 
 export default async function HomePage() {
-  const featured = (await fetchFeaturedTrack()) ?? demoTracks[demoTracks.length - 1];
+  const featured = (await fetchFeaturedTrack({ slim: true })) ?? demoTracks[demoTracks.length - 1];
   const latest = await fetchLatestTracks(12);
   const latestTracks = latest.length ? latest : demoTracks.slice(-12).reverse();
   const pick = (pred: (t: any) => boolean) => {

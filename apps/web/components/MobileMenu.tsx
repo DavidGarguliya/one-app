@@ -10,7 +10,7 @@ import { useSearchStore } from "../lib/searchStore";
 export type MobileMenuProps = {
   open: boolean;
   onClose: () => void;
-  links: { href: string; label: string }[];
+  links: { href: Parameters<typeof Link>[0]["href"]; label: string }[];
 };
 
 export function MobileMenu({ open, onClose, links }: MobileMenuProps) {
@@ -52,7 +52,7 @@ export function MobileMenu({ open, onClose, links }: MobileMenuProps) {
         <nav className="flex flex-col gap-1 px-5 pb-4 pt-2 text-[var(--fg)]/80 text-sm">
           {links.map((l) => (
             <Link
-              key={l.href}
+              key={l.label}
               href={l.href}
               onClick={onClose}
               className="px-3 py-2 rounded-xl hover:bg-white/5"

@@ -23,6 +23,8 @@ export function TrackForm({ trackId, initial }: TrackFormProps) {
   const [moodOptions, setMoodOptions] = useState<string[]>(defaultMoodOptions);
   const [occasionOptions, setOccasionOptions] = useState<string[]>(defaultOccasionOptions);
   const [genreOptions, setGenreOptions] = useState<string[]>(defaultGenreOptions);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
 
   useEffect(() => {
     if (initial) {
@@ -65,17 +67,114 @@ export function TrackForm({ trackId, initial }: TrackFormProps) {
     };
   }, []);
 
+  const guessAudioMime = (file: File) => {
+    if (file.type) return file.type;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    switch (ext) {
+      case "m4a":
+        return "audio/x-m4a";
+      case "mp4":
+        return "audio/mp4";
+      case "mp3":
+        return "audio/mpeg";
+      case "wav":
+        return "audio/wav";
+      case "aiff":
+      case "aif":
+        return "audio/aiff";
+      default:
+        return "application/octet-stream";
+    }
+  };
+
+  const readAsArrayBuffer = (file: File) =>
+    new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.readAsArrayBuffer(file);
+    });
+
+  const readAsDataUrl = (blob: Blob, mimeOverride?: string) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+      const source = mimeOverride ? new Blob([blob], { type: mimeOverride }) : blob;
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(source);
+    });
+
+  const encodeWav = (audioBuffer: AudioBuffer) => {
+    const numChannels = audioBuffer.numberOfChannels;
+    const sampleRate = audioBuffer.sampleRate;
+    const length = audioBuffer.length;
+    const bytesPerSample = 2;
+    const blockAlign = numChannels * bytesPerSample;
+    const buffer = new ArrayBuffer(44 + length * blockAlign);
+    const view = new DataView(buffer);
+
+    let offset = 0;
+    const writeString = (s: string) => {
+      for (let i = 0; i < s.length; i += 1) view.setUint8(offset + i, s.charCodeAt(i));
+      offset += s.length;
+    };
+    writeString("RIFF");
+    view.setUint32(offset, 36 + length * blockAlign, true); offset += 4;
+    writeString("WAVE");
+
+    writeString("fmt ");
+    view.setUint32(offset, 16, true); offset += 4;
+    view.setUint16(offset, 1, true); offset += 2;
+    view.setUint16(offset, numChannels, true); offset += 2;
+    view.setUint32(offset, sampleRate, true); offset += 4;
+    view.setUint32(offset, sampleRate * blockAlign, true); offset += 4;
+    view.setUint16(offset, blockAlign, true); offset += 2;
+    view.setUint16(offset, bytesPerSample * 8, true); offset += 2;
+
+    writeString("data");
+    view.setUint32(offset, length * blockAlign, true); offset += 4;
+
+    const channelData = Array.from({ length: numChannels }, (_, ch) => audioBuffer.getChannelData(ch));
+    for (let i = 0; i < length; i += 1) {
+      for (let ch = 0; ch < numChannels; ch += 1) {
+        const sample = Math.max(-1, Math.min(1, channelData[ch][i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
+    }
+    return new Blob([view], { type: "audio/wav" });
+  };
+
+  const toBrowserPlayableDataUrl = async (file: File, fallbackMime: string) => {
+    if (typeof window === "undefined") return readAsDataUrl(file, fallbackMime);
+    const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return readAsDataUrl(file, fallbackMime);
+    try {
+      const arr = await readAsArrayBuffer(file);
+      const ctx = new AudioCtx();
+      const decoded = await ctx.decodeAudioData(arr.slice(0));
+      const wav = encodeWav(decoded);
+      const dataUrl = await readAsDataUrl(wav, "audio/wav");
+      if (typeof ctx.close === "function") ctx.close();
+      return dataUrl;
+    } catch (err) {
+      console.warn("Не удалось перекодировать в WAV, используем оригинал", err);
+      return readAsDataUrl(file, fallbackMime);
+    }
+  };
+
   const handleAudio = async (file: File) => {
     try {
       const metadata = await parseBlob(file);
       if (metadata.common.title) setForm((f: any) => ({ ...f, title: metadata.common.title }));
       if (metadata.common.artist) setForm((f: any) => ({ ...f, artist: metadata.common.artist }));
-      if (metadata.format?.duration) {
-        setForm((f: any) => ({ ...f, duration: Math.round(metadata.format.duration) }));
+      if (typeof metadata.format?.duration === "number") {
+        setForm((f: any) => ({ ...f, duration: Math.round(metadata.format.duration ?? 0) }));
       }
       if (metadata.common.picture && metadata.common.picture[0]) {
         const pic = metadata.common.picture[0];
-        const blob = new Blob([pic.data], { type: pic.format });
+        const safePicBuffer = new Uint8Array(pic.data).buffer;
+        const blob = new Blob([safePicBuffer], { type: pic.format });
         const reader = new FileReader();
         reader.onload = () => {
           setCoverPreview(reader.result as string);
@@ -83,12 +182,10 @@ export function TrackForm({ trackId, initial }: TrackFormProps) {
         };
         reader.readAsDataURL(blob);
       }
-      // audio to data URL
-      const readerAudio = new FileReader();
-      readerAudio.onload = () => {
-        setForm((f: any) => ({ ...f, audioUrl: readerAudio.result as string }));
-      };
-      readerAudio.readAsDataURL(file);
+      // audio to data URL (convert to WAV for broader compatibility)
+      const mime = guessAudioMime(file);
+      const audioUrl = await toBrowserPlayableDataUrl(file, mime);
+      setForm((f: any) => ({ ...f, audioUrl }));
     } catch (e) {
       console.error(e);
     }
@@ -139,6 +236,27 @@ export function TrackForm({ trackId, initial }: TrackFormProps) {
     }
   };
 
+  const loadAudioUrl = async () => {
+    if (!trackId) return;
+    setAudioLoading(true);
+    setAudioError(null);
+    try {
+      const full = await adminApi.getTrack(trackId);
+      if (!full?.audioUrl) {
+        setAudioError("Не удалось получить audioUrl");
+        return;
+      }
+      setForm((prev: any) => ({ ...prev, audioUrl: full.audioUrl }));
+      if (full.duration && !form.duration) {
+        setForm((prev: any) => ({ ...prev, duration: full.duration }));
+      }
+    } catch (err: any) {
+      setAudioError(err?.message || "Не удалось загрузить audioUrl");
+    } finally {
+      setAudioLoading(false);
+    }
+  };
+
   return (
     <form className="space-y-4" onSubmit={submit}>
       <Card className="space-y-4 p-4 rounded-2xl">
@@ -162,7 +280,20 @@ export function TrackForm({ trackId, initial }: TrackFormProps) {
           </label>
         </div>
         <div className="grid md:grid-cols-2 gap-3">
-          <Input value={form.audioUrl || ""} onChange={(e) => setForm({ ...form, audioUrl: e.target.value })} placeholder="Ссылка на аудио" />
+          <div className="space-y-2">
+            <Input value={form.audioUrl || ""} onChange={(e) => setForm({ ...form, audioUrl: e.target.value })} placeholder="Ссылка на аудио" />
+            {trackId && !form.audioUrl && (
+              <button
+                type="button"
+                onClick={loadAudioUrl}
+                className="text-xs text-[var(--accent)] hover:text-[var(--accent-strong)]"
+                disabled={audioLoading}
+              >
+                {audioLoading ? "Загружаем audioUrl..." : "Подгрузить сохранённый audioUrl"}
+              </button>
+            )}
+            {audioError && <p className="text-xs text-red-400">{audioError}</p>}
+          </div>
           <Input value={form.coverUrl || ""} onChange={(e) => setForm({ ...form, coverUrl: e.target.value })} placeholder="Ссылка на обложку" />
         </div>
       </Card>

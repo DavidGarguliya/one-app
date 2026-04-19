@@ -12,10 +12,15 @@ export type PlayerState = {
   buffering: boolean;
   currentTrack: AudioTrack | null;
   volume: number;
+  queueContext: {
+    type: "home" | "playlist" | "genre" | "custom";
+    id?: string;
+  };
+  hasUserInitiatedPlayback: boolean;
 };
 
 export type PlayerActions = {
-  setQueue: (tracks: AudioTrack[], startIndex?: number) => void;
+  setQueue: (tracks: AudioTrack[], startIndex?: number, ctx?: { type: "home" | "playlist" | "genre" | "custom"; id?: string }) => void;
   play: (track?: AudioTrack) => void;
   pause: () => void;
   seek: (time: number) => void;
@@ -36,7 +41,9 @@ const initialState: PlayerState = {
   repeat: "off",
   buffering: false,
   currentTrack: null,
-  volume: 1
+  volume: 1,
+  queueContext: { type: "custom" },
+  hasUserInitiatedPlayback: false
 };
 
 // Some external sources (e.g. Apple Music previews) ship tiny 64x64 covers.
@@ -47,6 +54,9 @@ const upscaleCover = (url?: string) => {
 };
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => {
+  const persistedInitiated =
+    typeof window !== "undefined" ? window.sessionStorage.getItem("prosound_has_user_played") === "1" : false;
+
   const sync = () => {
     const state = audioEngine.state();
     set({
@@ -55,31 +65,47 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       currentIndex: state.index,
       duration: state.duration,
       currentTime: state.currentTime,
-      isPlaying: !state.paused,
       volume: state.volume,
       shuffle: state.shuffle ?? get().shuffle
     });
   };
 
   audioEngine.on("timeupdate", sync);
-  audioEngine.on("play", () => set({ isPlaying: true }));
-  audioEngine.on("pause", () => set({ isPlaying: false }));
+  audioEngine.on("play", () => set({ buffering: true }));
+  audioEngine.on("playing", () => set({ isPlaying: true, buffering: false }));
+  audioEngine.on("pause", () => set({ isPlaying: false, buffering: false }));
+  audioEngine.on("error", () => set({ isPlaying: false, buffering: false }));
+  audioEngine.on("ended", () => set({ isPlaying: false, buffering: false }));
   audioEngine.on("buffering", () => set({ buffering: true }));
-  audioEngine.on("loadedmetadata", () => set({ buffering: false, duration: audioEngine.state().duration }));
+  audioEngine.on("loadedmetadata", () => {
+    set({ buffering: false, duration: audioEngine.state().duration });
+    sync();
+  });
 
   return {
     ...initialState,
-    setQueue: (tracks, startIndex = 0) => {
+    hasUserInitiatedPlayback: persistedInitiated,
+    setQueue: (tracks, startIndex = 0, ctx) => {
       const normalized = tracks.map((t) => ({ ...t, coverUrl: upscaleCover(t.coverUrl) }));
       audioEngine.setQueue(normalized, startIndex);
+      set({
+        queueContext: ctx || get().queueContext,
+        hasUserInitiatedPlayback: get().hasUserInitiatedPlayback
+      });
       sync();
     },
     play: (track) => {
+      if (!get().hasUserInitiatedPlayback && typeof window !== "undefined") {
+        window.sessionStorage.setItem("prosound_has_user_played", "1");
+      }
+      set({ hasUserInitiatedPlayback: true });
       if (track) {
         audioEngine.setQueue([{ ...track, coverUrl: upscaleCover(track.coverUrl) }], 0);
       }
-      audioEngine.play();
-      sync();
+      set({ buffering: true });
+      audioEngine.play().catch(() => {
+        set({ isPlaying: false, buffering: false });
+      });
     },
     pause: () => {
       audioEngine.pause();
@@ -91,11 +117,11 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     },
     next: () => {
       audioEngine.next();
-      sync();
+      set({ buffering: true });
     },
     prev: () => {
       audioEngine.prev();
-      sync();
+      set({ buffering: true });
     },
     toggleShuffle: () => {
       audioEngine.setShuffle();

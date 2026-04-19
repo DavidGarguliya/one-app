@@ -1,6 +1,6 @@
 "use client";
 
-export * from "./theme.css";
+import "./theme.css";
 export * from "./components/Button";
 export * from "./components/Card";
 export * from "./components/Input";

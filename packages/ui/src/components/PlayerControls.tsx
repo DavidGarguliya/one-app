@@ -58,7 +58,8 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   onSeek,
   volume,
   onVolumeChange,
-  onCollapse
+  onCollapse,
+  onShare
 }) => {
   const percentage = duration ? Math.min(100, (progress / duration) * 100) : 0;
   const repeatLabel = repeat === "one" ? "Повтор одного трека" : repeat === "all" ? "Повтор всех" : "Повтор выкл";

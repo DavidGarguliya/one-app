@@ -5,15 +5,16 @@ import { TrackDTO } from "@one-app/types";
 import { usePlayerStore } from "@one-app/player";
 import { motion, AnimatePresence } from "framer-motion";
 import { CtaButton } from "./CtaButton";
+import { resolveAudioUrl, toAudioTrack } from "@/lib/audioSource";
 
 type Scene = {
   key: string;
   content: React.ReactNode;
 };
 
-export function HomeClient({ featured }: { featured: TrackDTO }) {
-  const { setQueue, play, pause, currentTrack } = usePlayerStore();
-  const [isPlaying, setIsPlaying] = useState(false);
+export function HomeClient(props: { featured: TrackDTO; latest?: TrackDTO[]; playlists?: { title: string; tracks: TrackDTO[] }[] }) {
+  const { featured } = props;
+  const { setQueue, play, pause, currentTrack, isPlaying } = usePlayerStore();
   const [active, setActive] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const touchStartY = useRef<number | null>(null);
@@ -31,27 +32,7 @@ export function HomeClient({ featured }: { featured: TrackDTO }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!featured) return;
-    if (!currentTrack || currentTrack.id !== featured.id) {
-      setQueue(
-        [
-          {
-            id: featured.id,
-            url: (featured as any).audioUrl || (featured as any).url,
-            title: featured.title,
-            artist: featured.artist || "",
-            coverUrl: featured.coverUrl
-          } as any
-        ],
-        0
-      );
-      pause();
-      setIsPlaying(false);
-    }
-  }, [featured, currentTrack, setQueue, pause]);
-
-  const togglePlay = () => {
+  const togglePlay = async () => {
     if (!featured) return;
     if (!revealOnPlay.current && typeof window !== "undefined") {
       window.sessionStorage.setItem("prosound_player_revealed", "1");
@@ -59,28 +40,16 @@ export function HomeClient({ featured }: { featured: TrackDTO }) {
       revealOnPlay.current = true;
     }
     if (!currentTrack || currentTrack.id !== featured.id) {
-      setQueue(
-        [
-          {
-            id: featured.id,
-            url: (featured as any).audioUrl || (featured as any).url,
-            title: featured.title,
-            artist: featured.artist || "",
-            coverUrl: featured.coverUrl
-          } as any
-        ],
-        0
-      );
+      const url = await resolveAudioUrl(featured);
+      if (!url) return;
+      setQueue([toAudioTrack(featured, url) as any], 0, { type: "home", id: "home-latest" });
       play();
-      setIsPlaying(true);
       return;
     }
     if (isPlaying) {
       pause();
-      setIsPlaying(false);
     } else {
       play();
-      setIsPlaying(true);
     }
   };
 

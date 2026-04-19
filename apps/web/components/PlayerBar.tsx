@@ -20,7 +20,7 @@ export const PlayerBar = () => {
     next,
     prev,
     shuffle,
-    setShuffle,
+    toggleShuffle,
     repeat,
     setRepeat,
     seek,
@@ -72,6 +72,8 @@ export const PlayerBar = () => {
   const dragDistanceRef = useRef(0);
   const dragStartedFromHeader = useRef(false);
   const playToggleFromTouch = useRef(false);
+  const lrcCacheRef = useRef<Map<string, string>>(new Map());
+  const [lyricsOverlayVisible, setLyricsOverlayVisible] = useState(false);
 
   const getViewportHeight = () => {
     if (typeof window === "undefined") return 0;
@@ -189,32 +191,69 @@ export const PlayerBar = () => {
   }, []);
 
   useEffect(() => {
-    const lrcRaw = (currentTrack as any)?.lrc || (currentTrack as any)?.lyrics || "";
-    if (!lrcRaw || typeof lrcRaw !== "string") {
-      setLyrics([]);
-      return;
-    }
-    const lines = lrcRaw.split("\n");
-    const parsed: { time: number; text: string }[] = [];
-    const timeRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
-    for (const line of lines) {
-      const matches = [...line.matchAll(timeRegex)];
-      if (!matches.length) continue;
-      const text = line.replace(timeRegex, "").trim();
-      for (const match of matches) {
-        const m = Number(match[1]);
-        const s = Number(match[2]);
-        const ms = match[3] ? Number(match[3]) : 0;
-        const total = m * 60 + s + ms / 1000;
-        parsed.push({ time: total, text });
+    let cancelled = false;
+    const parseAndSet = (raw: string) => {
+      if (cancelled) return;
+      if (!raw || typeof raw !== "string") {
+        setLyrics([]);
+        return;
       }
+      const lines = raw.split("\n");
+      const parsed: { time: number; text: string }[] = [];
+      const timeRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
+      for (const line of lines) {
+        const matches = [...line.matchAll(timeRegex)];
+        if (!matches.length) continue;
+        const text = line.replace(timeRegex, "").trim();
+        for (const match of matches) {
+          const m = Number(match[1]);
+          const s = Number(match[2]);
+          const ms = match[3] ? Number(match[3]) : 0;
+          const total = m * 60 + s + ms / 1000;
+          parsed.push({ time: total, text });
+        }
+      }
+      parsed.sort((a, b) => a.time - b.time);
+      setLyrics(parsed);
+    };
+
+    const lrcRaw = (currentTrack as any)?.lrc || (currentTrack as any)?.lyrics || "";
+    const lrcUrl = (currentTrack as any)?.lyricsLrcUrl || (currentTrack as any)?.lyrics_lrc_url;
+    if (lrcRaw && typeof lrcRaw === "string") {
+      parseAndSet(lrcRaw);
+      return () => {
+        cancelled = true;
+      };
     }
-    parsed.sort((a, b) => a.time - b.time);
-    setLyrics(parsed);
-  }, [currentTrack]);
+    if (lrcUrl && typeof lrcUrl === "string") {
+      const cached = lrcCacheRef.current.get(lrcUrl);
+      if (cached) {
+        parseAndSet(cached);
+        return () => {
+          cancelled = true;
+        };
+      }
+      fetch(lrcUrl)
+        .then((res) => (res.ok ? res.text() : ""))
+        .then((text) => {
+          if (!text || cancelled) return;
+          lrcCacheRef.current.set(lrcUrl, text);
+          parseAndSet(text);
+        })
+        .catch(() => {});
+      return () => {
+        cancelled = true;
+      };
+    }
+    setLyrics([]);
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrack?.id]);
 
   useEffect(() => {
     setCoverRotation(0);
+    setLyricsOverlayVisible(false);
   }, [currentTrack?.id]);
 
   useEffect(() => {
@@ -367,12 +406,13 @@ export const PlayerBar = () => {
     const next = lyrics[idx + 1];
     return displayProgress >= item.time && (!next || displayProgress < next.time);
   });
+  const hasLyrics = lyrics.length > 0;
 
   const isInteractiveTarget = (target: EventTarget | null) => {
     const node = target as HTMLElement | null;
     if (!node) return false;
     if (node.closest && node.closest("button, a, input, select, textarea, option")) return true;
-    let el = node;
+    let el: HTMLElement | null = node;
     while (el) {
       const tag = el.tagName?.toLowerCase();
       if (["button", "input", "select", "textarea", "option", "a"].includes(tag)) return true;
@@ -400,21 +440,66 @@ export const PlayerBar = () => {
     manualScrollTimeout.current = setTimeout(() => setManualLyricsScroll(false), 2000);
   };
 
+  const lyricsOverlay = lyricsOverlayVisible ? (
+    <div className="fixed inset-0 z-[70] bg-black/75 backdrop-blur-xl flex items-center justify-center px-4 py-8">
+      <div className="relative w-full max-w-3xl bg-[color-mix(in_srgb,var(--glass)_92%,transparent)] border border-[var(--border-strong)] rounded-3xl shadow-[var(--shadow-card)] p-6 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Текст</p>
+            <h3 className="text-2xl font-semibold">{currentTrack?.title || "Трек"}</h3>
+            <p className="text-sm text-[var(--fg)]/70">{currentTrack?.artist}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="px-3 py-2 rounded-full border border-[var(--border)] bg-white/10 text-sm hover:bg-white/15 transition"
+              onClick={() => setLyricsOverlayVisible(false)}
+              type="button"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+        <div className="max-h-[60vh] overflow-auto space-y-2 pr-1">
+          {hasLyrics ? (
+            lyrics.map((line, idx) => {
+              const next = lyrics[idx + 1];
+              const active = displayProgress >= line.time && (!next || displayProgress < next.time);
+              return (
+                <div
+                  key={`${line.time}-${idx}`}
+                  className={`px-3 py-2 rounded-xl text-[var(--fg)] transition-colors ${
+                    active ? "bg-[color-mix(in_srgb,var(--accent)_25%,transparent)] text-[var(--accent-strong)]" : "bg-white/5 text-[var(--fg)]/80"
+                  }`}
+                >
+                  {line.text || "…"}
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-sm text-[var(--muted)]">Текст недоступен для этого трека.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!playerRevealed) {
-    return null;
+    return <>{lyricsOverlay}</>;
   }
 
   if (!currentTrack && !collapsed) {
     return (
-      <div className="fixed inset-x-0 bottom-3 px-3 md:px-6 flex justify-center pointer-events-none z-30">
-        <div className="max-w-5xl w-full rounded-full p-4 text-[var(--muted)] text-sm bg-[var(--card)] border border-[var(--border)] shadow-[var(--shadow-card)] pointer-events-auto">
-          Выберите трек или плейлист — плеер останется с вами, пока слушаете истории.
+      <>
+        {lyricsOverlay}
+        <div className="fixed inset-x-0 bottom-3 px-3 md:px-6 flex justify-center pointer-events-none z-30">
+          <div className="max-w-5xl w-full rounded-full p-4 text-[var(--muted)] text-sm bg-[var(--card)] border border-[var(--border)] shadow-[var(--shadow-card)] pointer-events-auto">
+            Выберите трек или плейлист — плеер останется с вами, пока слушаете истории.
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
-  const toggleShuffle = () => setShuffle(!shuffle);
   const toggleRepeat = () => setRepeat(repeat === "off" ? "all" : repeat === "all" ? "one" : "off");
   const handleShare = () => {
     if (!currentTrack) return;
@@ -444,7 +529,7 @@ export const PlayerBar = () => {
   };
 
   if (isMobile) {
-    if (!currentTrack) return null;
+    if (!currentTrack) return <>{lyricsOverlay}</>;
 
     const renderSheetY = Math.min(sheetMetrics.hiddenY || sheetY, Math.max(0, sheetY));
     const expandProgress = Math.min(1, Math.max(0, 1 - renderSheetY / Math.max(1, sheetMetrics.collapsedY || 1)));
@@ -518,111 +603,100 @@ export const PlayerBar = () => {
     };
 
     return (
-      <div className="fixed inset-0 z-50 pointer-events-none">
-        <div
-          className="absolute inset-0 bg-black/60 pointer-events-auto"
-          style={{ opacity: overlayOpacity, pointerEvents: expandedOpacity > 0 ? "auto" : "none" }}
-        />
-        <div
-          className="absolute inset-x-0 bottom-0 pointer-events-auto rounded-t-3xl bg-[var(--glass)] border border-[var(--border-strong)] shadow-[0_-10px_28px_rgba(0,0,0,0.35)] overflow-hidden relative"
-          style={{
-            transform: `translateY(${renderSheetY}px)`,
-            height: sheetMetrics.height ? `${sheetMetrics.height}px` : "100svh",
-            minHeight: "min(100svh, 100dvh)",
-            maxHeight: "100dvh",
-            paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
-            opacity: sheetVisible ? 1 : 0,
-            transition: isDraggingSheet.current ? "none" : "transform 320ms ease, opacity 240ms ease",
-            pointerEvents: sheetVisible ? "auto" : "none",
-            willChange: "transform"
-          }}
-          ref={sheetRef}
-          onTouchStart={(e) => {
-            if (isInteractiveTarget(e.target)) return;
-            // Allow vertical swipe only from header/grab area to avoid conflicts with scrollable content
-            startDragSheet(e.touches[0].clientY);
-            e.preventDefault();
-          }}
-          onTouchMove={(e) => {
-            if (!isDraggingSheet.current) return;
-            moveDragSheet(e.touches[0].clientY);
-            e.preventDefault();
-          }}
-          onTouchEnd={(e) => {
-            if (!isDraggingSheet.current) return;
-            endDragSheet(e.changedTouches[0].clientY);
-            e.preventDefault();
-          }}
-          onPointerDown={(e) => {
-            // allow mouse drag in dev/desktop emulation
-            if (e.pointerType === "mouse") return;
-            if (isInteractiveTarget(e.target)) return;
-            // Allow vertical swipe only from header/grab area to avoid conflicts with scrollable content
-            startDragSheet(e.clientY);
-            e.preventDefault();
-          }}
-          onPointerMove={(e) => {
-            if (!isDraggingSheet.current || e.pointerType === "mouse") return;
-            moveDragSheet(e.clientY);
-            e.preventDefault();
-          }}
-          onPointerUp={(e) => {
-            if (!isDraggingSheet.current || e.pointerType === "mouse") return;
-            endDragSheet(e.clientY);
-            e.preventDefault();
-          }}
-        >
-          <div className="absolute inset-0 -z-10 bg-[var(--glass)]/92 backdrop-blur-xl" />
-          {/* Collapsed content */}
+      <>
+        {lyricsOverlay}
+        <div className="fixed inset-0 z-50 pointer-events-none">
           <div
-            className="flex flex-col items-center px-5 pt-4 pb-8 gap-3 absolute inset-x-0 top-0"
+            className="absolute inset-0 bg-black/60 pointer-events-auto"
+            style={{ opacity: overlayOpacity, pointerEvents: expandedOpacity > 0 ? "auto" : "none" }}
+          />
+          <div
+            className="absolute inset-x-0 bottom-0 pointer-events-auto rounded-t-3xl bg-[var(--glass)] border border-[var(--border-strong)] shadow-[0_-10px_28px_rgba(0,0,0,0.35)] overflow-hidden relative"
             style={{
-              opacity: collapsedOpacity,
-              pointerEvents: collapsedOpacity > 0 ? "auto" : "none",
-              transform: `translateY(${expandProgress * 12}px)`,
-              transition: "opacity 180ms ease, transform 220ms ease",
-              visibility: collapsedVisibility,
-              willChange: "opacity, transform"
+              transform: `translateY(${renderSheetY}px)`,
+              height: sheetMetrics.height ? `${sheetMetrics.height}px` : "100svh",
+              minHeight: "min(100svh, 100dvh)",
+              maxHeight: "100dvh",
+              paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)",
+              opacity: sheetVisible ? 1 : 0,
+              transition: isDraggingSheet.current ? "none" : "transform 320ms ease, opacity 240ms ease",
+              pointerEvents: sheetVisible ? "auto" : "none",
+              willChange: "transform"
+            }}
+            ref={sheetRef}
+            onTouchStart={(e) => {
+              if (isInteractiveTarget(e.target)) return;
+              startDragSheet(e.touches[0].clientY);
+              e.preventDefault();
+            }}
+            onTouchMove={(e) => {
+              if (!isDraggingSheet.current) return;
+              moveDragSheet(e.touches[0].clientY);
+              e.preventDefault();
+            }}
+            onTouchEnd={(e) => {
+              if (!isDraggingSheet.current) return;
+              endDragSheet(e.changedTouches[0].clientY);
+              e.preventDefault();
+            }}
+            onPointerDown={(e) => {
+              if (e.pointerType === "mouse") return;
+              if (isInteractiveTarget(e.target)) return;
+              startDragSheet(e.clientY);
+              e.preventDefault();
+            }}
+            onPointerMove={(e) => {
+              if (!isDraggingSheet.current || e.pointerType === "mouse") return;
+              moveDragSheet(e.clientY);
+              e.preventDefault();
+            }}
+            onPointerUp={(e) => {
+              if (!isDraggingSheet.current || e.pointerType === "mouse") return;
+              endDragSheet(e.clientY);
+              e.preventDefault();
             }}
           >
-            <div className="w-12 h-1.5 rounded-full bg-white/25" />
-            <div className="flex items-center gap-3 w-full">
-              <div
-                className="relative h-[64px] w-[64px] rounded-full overflow-visible bg-[var(--border)] border border-[var(--border-strong)] shadow-[var(--shadow-card)] flex-shrink-0"
-                style={{ transform: `rotate(${coverRotation}deg)`, transition: "transform 200ms linear" }}
-              >
-                {currentTrack.coverUrl ? (
-                  <img src={currentTrack.coverUrl} alt={currentTrack.title} className="h-full w-full object-cover rounded-full" />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-[10px] text-[var(--muted)]">Нет обложки</div>
-                )}
-                <span className="absolute inset-0 border border-[color-mix(in_srgb,var(--bg)_45%,transparent)] rounded-full pointer-events-none" />
-                <span className="absolute inset-0 flex items-center justify-center">
-                  <span className="h-4 w-4 rounded-full bg-[color-mix(in_srgb,var(--bg)_70%,#000)] border border-[var(--border-strong)] shadow-inner" />
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="relative h-[18px] overflow-hidden">
-                  <div className="absolute inset-0">
-                    <p className="text-sm font-semibold text-[var(--fg)] truncate">{currentTrack.title}</p>
-                  </div>
-                </div>
-                <p className="text-xs text-[var(--muted)] truncate">{currentTrack.artist}</p>
+            <div className="absolute inset-0 -z-10 bg-[var(--glass)]/92 backdrop-blur-xl" />
+            {/* Collapsed content */}
+            <div
+              className="flex flex-col items-center px-5 pt-4 pb-8 gap-3 absolute inset-x-0 top-0"
+              style={{
+                opacity: collapsedOpacity,
+                pointerEvents: collapsedOpacity > 0 ? "auto" : "none",
+                transform: `translateY(${expandProgress * 12}px)`,
+                transition: "opacity 180ms ease, transform 220ms ease",
+                visibility: collapsedVisibility,
+                willChange: "opacity, transform"
+              }}
+            >
+              <div className="w-12 h-1.5 rounded-full bg-white/25" />
+              <div className="flex items-center gap-3 w-full">
                 <div
-                  ref={barRef}
-                  className="relative mt-2 h-[2px] rounded-full bg-[color-mix(in_srgb,var(--fg)_10%,transparent)] overflow-visible transition-opacity duration-200"
-                  style={{ opacity: duration ? 1 : 0 }}
-                  onPointerDown={onPointerDown}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={onPointerUp}
-                  onPointerCancel={onPointerUp}
-                  onPointerEnter={() => setCollapsedThumbVisible(true)}
-                  onPointerLeave={() => {
-                    if (!scrubbingCollapsed.current) setCollapsedThumbVisible(false);
-                  }}
+                  className="relative h-[64px] w-[64px] rounded-full overflow-visible bg-[var(--border)] border border-[var(--border-strong)] shadow-[var(--shadow-card)] flex-shrink-0"
+                  style={{ transform: `rotate(${coverRotation}deg)`, transition: "transform 200ms linear" }}
                 >
+                  {currentTrack.coverUrl ? (
+                    <img src={currentTrack.coverUrl} alt={currentTrack.title} className="h-full w-full object-cover rounded-full" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-[10px] text-[var(--muted)]">Нет обложки</div>
+                  )}
+                  <span className="absolute inset-0 border border-[color-mix(in_srgb,var(--bg)_45%,transparent)] rounded-full pointer-events-none" />
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <span className="h-4 w-4 rounded-full bg-[color-mix(in_srgb,var(--bg)_70%,#000)] border border-[var(--border-strong)] shadow-inner" />
+                  </span>
+                  <span className="pointer-events-none absolute top-1/2 left-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[color-mix(in_srgb,var(--bg)_85%,transparent)] border border-[var(--border)] shadow-inner" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="relative h-[18px] overflow-hidden">
+                    <div className="absolute inset-0">
+                      <p className="text-sm font-semibold text-[var(--fg)] truncate">{currentTrack.title}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-[var(--muted)] truncate">{currentTrack.artist}</p>
                   <div
-                    className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[10px] cursor-pointer"
+                    ref={barRef}
+                    className="relative mt-2 h-[2px] rounded-full bg-[color-mix(in_srgb,var(--fg)_10%,transparent)] overflow-visible transition-opacity duration-200"
+                    style={{ opacity: duration ? 1 : 0 }}
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
@@ -631,198 +705,224 @@ export const PlayerBar = () => {
                     onPointerLeave={() => {
                       if (!scrubbingCollapsed.current) setCollapsedThumbVisible(false);
                     }}
-                  />
-                  <div className="h-full bg-[var(--accent)]" style={{ width: `${progressPercent}%`, transition: scrubbingCollapsed.current ? "none" : "width 120ms linear" }} />
-                  <div
-                    className="absolute top-1/2 h-3 w-3 rounded-full bg-[var(--accent)] border border-[var(--border-strong)] shadow-[var(--shadow-card)] transition-opacity duration-120 pointer-events-none"
-                    style={{
-                      left: `${progressPercent}%`,
-                      transform: "translate(-50%, -50%)",
-                      opacity: collapsedThumbVisible ? 1 : 0
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  className="h-11 w-11 rounded-full bg-[color-mix(in srgb,var(--bg) 55%,transparent)] border border-[var(--border)] flex items-center justify-center active:scale-95 transition"
-                  onTouchEnd={handlePlayTouchEnd}
-                  onClick={handlePlayClick}
-                  aria-label={isPlaying ? "Пауза" : "Играть"}
-                  type="button"
-                >
-                  {isPlaying ? <Pause size={22} weight="fill" /> : <Play size={22} weight="fill" />}
-                </button>
-                <button
-                  className="h-10 w-9 flex items-center justify-center text-[var(--muted)]"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    animateSheetTo(0);
-                  }}
-                  aria-label="Развернуть"
-                  type="button"
-                >
-                  <CaretUp size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Expanded content (same surface) */}
-          <div
-            className="flex flex-col h-full px-5 pt-4 pb-6 gap-4"
-            style={{
-              opacity: expandedOpacity,
-              pointerEvents: expandedOpacity > 0 ? "auto" : "none",
-              transform: `translateY(${(1 - expandedOpacity) * 16}px)`,
-              transition: "opacity 220ms ease, transform 240ms ease",
-              position: "relative",
-              zIndex: expandedOpacity > 0 ? 1 : 0,
-              paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)"
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between w-full text-[var(--fg)]/70">
-              <div className="h-10 w-10" aria-hidden="true" />
-              <div className="text-[11px] font-semibold tracking-[0.28em] uppercase max-w-[62%] truncate text-center text-[var(--fg)]/60">
-                {headerTitle}
-              </div>
-              <button
-                className="h-10 w-10 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center active:scale-95 transition disabled:opacity-60"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  collapseSheet();
-                }}
-                aria-label="Свернуть"
-                type="button"
-              >
-                <CaretDown size={18} />
-              </button>
-            </div>
-            <div className="flex flex-col items-center gap-5 w-full flex-1 min-h-0">
-              <div
-                className="relative w-[72vw] h-[72vw] max-w-[320px] max-h-[320px] rounded-[26px] overflow-hidden shadow-[var(--shadow-card)]"
-                style={{ transition: "transform 240ms ease", maxHeight: "min(52svh, 320px)" }}
-              >
-                {currentTrack.coverUrl ? (
-                  <img src={currentTrack.coverUrl} alt={currentTrack.title} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-[var(--muted)]">Нет обложки</div>
-                )}
-              </div>
-              <div className="w-full flex items-start justify-between px-2 gap-3">
-                <div className="min-w-0">
-                  <p className="text-2xl font-semibold truncate">{currentTrack.title}</p>
-                  <p className="text-sm text-[var(--fg)]/70 truncate">{currentTrack.artist || "Неизвестный артист"}</p>
+                  >
+                    <div
+                      className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[10px] cursor-pointer"
+                      onPointerDown={onPointerDown}
+                      onPointerMove={onPointerMove}
+                      onPointerUp={onPointerUp}
+                      onPointerCancel={onPointerUp}
+                      onPointerEnter={() => setCollapsedThumbVisible(true)}
+                      onPointerLeave={() => {
+                        if (!scrubbingCollapsed.current) setCollapsedThumbVisible(false);
+                      }}
+                    />
+                    <div className="h-full bg-[var(--accent)]" style={{ width: `${progressPercent}%`, transition: scrubbingCollapsed.current ? "none" : "width 120ms linear" }} />
+                    <div
+                      className="absolute top-1/2 h-3 w-3 rounded-full bg-[var(--accent)] border border-[var(--border-strong)] shadow-[var(--shadow-card)] transition-opacity duration-120 pointer-events-none"
+                      style={{
+                        left: `${progressPercent}%`,
+                        transform: "translate(-50%, -50%)",
+                        opacity: collapsedThumbVisible ? 1 : 0
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    className="h-10 w-10 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center text-[var(--fg)]/70"
+                    className="h-11 w-11 rounded-full bg-[color-mix(in srgb,var(--bg) 55%,transparent)] border border-[var(--border)] flex items-center justify-center active:scale-95 transition"
+                    onTouchEnd={handlePlayTouchEnd}
+                    onClick={handlePlayClick}
+                    aria-label={isPlaying ? "Пауза" : "Играть"}
                     type="button"
-                    aria-label="В избранное"
                   >
-                    <Heart size={18} weight="regular" />
+                    {isPlaying ? <Pause size={22} weight="fill" /> : <Play size={22} weight="fill" />}
                   </button>
                   <button
-                    className="h-10 w-10 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center active:scale-95 transition disabled:opacity-60"
+                    className="h-10 w-9 flex items-center justify-center text-[var(--muted)]"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (!shareLocked) handleShare();
+                      animateSheetTo(0);
                     }}
-                    aria-label="Поделиться"
+                    aria-label="Развернуть"
                     type="button"
-                    disabled={shareLocked}
                   >
-                    <DotsThree size={18} weight="bold" />
+                    <CaretUp size={16} />
                   </button>
                 </div>
               </div>
-              <div className="w-full px-1 flex-shrink-0">
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 0}
-                  value={displayProgress}
-                  step="any"
-                  onChange={(e) => handleSeek(Number(e.target.value))}
-                  onMouseDown={() => setIsScrubbing(true)}
-                  onMouseUp={() => setIsScrubbing(false)}
-                  onTouchStart={() => setIsScrubbing(true)}
-                  onTouchEnd={() => setIsScrubbing(false)}
-                  className="w-full h-[2px] rounded-full appearance-none bg-[color-mix(in_srgb,var(--fg)_14%,transparent)] focus:outline-none focus:ring-0 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--fg)] [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-[var(--border-strong)]"
-                  style={{
-                    background: `linear-gradient(90deg, var(--fg) ${progressPercent}%, color-mix(in srgb,var(--fg) 16%,transparent) ${progressPercent}%)`
-                  }}
-                />
-                <div className="flex items-center justify-between text-[11px] text-[var(--muted)] mt-2">
-                  <span>{formatTime(displayProgress)}</span>
-                  <span>-{formatTime(Math.max(0, duration - displayProgress))}</span>
+            </div>
+
+            {/* Expanded content (same surface) */}
+            <div
+              className="flex flex-col h-full px-5 pt-4 pb-6 gap-4"
+              style={{
+                opacity: expandedOpacity,
+                pointerEvents: expandedOpacity > 0 ? "auto" : "none",
+                transform: `translateY(${(1 - expandedOpacity) * 16}px)`,
+                transition: "opacity 220ms ease, transform 240ms ease",
+                position: "relative",
+                zIndex: expandedOpacity > 0 ? 1 : 0,
+                paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)"
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between w-full text-[var(--fg)]/70">
+                <div className="h-10 w-10" aria-hidden="true" />
+                <div className="text-[11px] font-semibold tracking-[0.28em] uppercase max-w-[62%] truncate text-center text-[var(--fg)]/60">
+                  {headerTitle}
                 </div>
+                <button
+                  className="h-10 w-10 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center active:scale-95 transition disabled:opacity-60"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    collapseSheet();
+                  }}
+                  aria-label="Свернуть"
+                  type="button"
+                >
+                  <CaretDown size={18} />
+                </button>
               </div>
-              <div className="w-full flex items-center justify-between px-2 text-[var(--muted)] flex-shrink-0">
-                <button
-                  className={`h-10 w-10 rounded-full border border-[var(--border)] flex items-center justify-center transition ${shuffle ? "bg-[color-mix(in_srgb,var(--fg)_18%,transparent)] text-[var(--fg)]" : "bg-white/5"}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShuffle(!shuffle);
-                  }}
-                  aria-label="Перемешать"
-                  type="button"
+              <div className="flex flex-col items-center gap-5 w-full flex-1 min-h-0">
+                <div
+                  className="relative w-[72vw] h-[72vw] max-w-[320px] max-h-[320px] rounded-[26px] overflow-hidden shadow-[var(--shadow-card)]"
+                  style={{ transition: "transform 240ms ease", maxHeight: "min(52svh, 320px)" }}
                 >
-                  <Shuffle size={18} weight="bold" />
-                </button>
-                <button
-                  className="h-11 w-11 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center active:scale-95 transition"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    prev();
-                  }}
-                  aria-label="Предыдущий трек"
-                  type="button"
-                >
-                  <SkipBack size={22} weight="fill" />
-                </button>
-                <button
-                  className="h-14 w-14 rounded-full bg-white/90 text-[#0a0d14] flex items-center justify-center active:scale-95 transition shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
-                  onTouchEnd={handlePlayTouchEnd}
-                  onClick={handlePlayClick}
-                  aria-label={isPlaying ? "Пауза" : "Играть"}
-                  type="button"
-                >
-                  {isPlaying ? <Pause size={26} weight="fill" /> : <Play size={26} weight="fill" />}
-                </button>
-                <button
-                  className="h-11 w-11 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center active:scale-95 transition"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    next();
-                  }}
-                  aria-label="Следующий трек"
-                  type="button"
-                >
-                  <SkipForward size={22} weight="fill" />
-                </button>
-                <button
-                  className={`h-10 w-10 rounded-full border border-[var(--border)] flex items-center justify-center transition ${repeat !== "off" ? "bg-[color-mix(in_srgb,var(--fg)_18%,transparent)] text-[var(--fg)]" : "bg-white/5"}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleRepeat();
-                  }}
-                  aria-label="Повтор"
-                  type="button"
-                >
-                  {repeat === "one" ? <RepeatOnce size={18} weight="bold" /> : <Repeat size={18} />}
-                </button>
+                  {currentTrack.coverUrl ? (
+                    <img src={currentTrack.coverUrl} alt={currentTrack.title} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-[var(--muted)]">Нет обложки</div>
+                  )}
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <span className="h-10 w-10 rounded-full bg-[color-mix(in_srgb,var(--bg)_82%,transparent)] border border-[var(--border-strong)] shadow-inner" />
+                  </span>
+                </div>
+                <div className="w-full flex items-start justify-between px-2 gap-3">
+                  <div className="min-w-0">
+                    <p className="text-2xl font-semibold truncate">{currentTrack.title}</p>
+                    <p className="text-sm text-[var(--fg)]/70 truncate">{currentTrack.artist || "Неизвестный артист"}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="h-10 w-10 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center text-[var(--fg)]/70"
+                      type="button"
+                      aria-label="В избранное"
+                    >
+                      <Heart size={18} weight="regular" />
+                    </button>
+                    <button
+                      className="h-10 w-10 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center active:scale-95 transition disabled:opacity-60"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!shareLocked) handleShare();
+                      }}
+                      aria-label="Поделиться"
+                      type="button"
+                      disabled={shareLocked}
+                    >
+                      <DotsThree size={18} weight="bold" />
+                    </button>
+                  </div>
+                </div>
+                {hasLyrics && (
+                  <button
+                    className="self-start text-sm text-[var(--accent)] underline underline-offset-4 hover:text-[var(--accent-strong)]"
+                    type="button"
+                    onClick={() => setLyricsOverlayVisible(true)}
+                  >
+                    Показать текст
+                  </button>
+                )}
+                <div className="w-full px-1 flex-shrink-0">
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration || 0}
+                    value={displayProgress}
+                    step="any"
+                    onChange={(e) => handleSeek(Number(e.target.value))}
+                    onMouseDown={() => setIsScrubbing(true)}
+                    onMouseUp={() => setIsScrubbing(false)}
+                    onTouchStart={() => setIsScrubbing(true)}
+                    onTouchEnd={() => setIsScrubbing(false)}
+                    className="w-full h-[2px] rounded-full appearance-none bg-[color-mix(in_srgb,var(--fg)_14%,transparent)] focus:outline-none focus:ring-0 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[var(--fg)] [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-[var(--border-strong)]"
+                    style={{
+                      background: `linear-gradient(90deg, var(--fg) ${progressPercent}%, color-mix(in srgb,var(--fg) 16%,transparent) ${progressPercent}%)`
+                    }}
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-[var(--muted)] mt-2">
+                    <span>{formatTime(displayProgress)}</span>
+                    <span>-{formatTime(Math.max(0, duration - displayProgress))}</span>
+                  </div>
+                </div>
+                <div className="w-full flex items-center justify-between px-2 text-[var(--muted)] flex-shrink-0">
+                  <button
+                    className={`h-10 w-10 rounded-full border border-[var(--border)] flex items-center justify-center transition ${shuffle ? "bg-[color-mix(in_srgb,var(--fg)_18%,transparent)] text-[var(--fg)]" : "bg-white/5"}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleShuffle();
+                    }}
+                    aria-label="Перемешать"
+                    type="button"
+                  >
+                    <Shuffle size={18} weight="bold" />
+                  </button>
+                  <button
+                    className="h-11 w-11 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center active:scale-95 transition"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      prev();
+                    }}
+                    aria-label="Предыдущий трек"
+                    type="button"
+                  >
+                    <SkipBack size={22} weight="fill" />
+                  </button>
+                  <button
+                    className="h-14 w-14 rounded-full bg-white/90 text-[#0a0d14] flex items-center justify-center active:scale-95 transition shadow-[0_8px_20px_rgba(0,0,0,0.35)]"
+                    onTouchEnd={handlePlayTouchEnd}
+                    onClick={handlePlayClick}
+                    aria-label={isPlaying ? "Пауза" : "Играть"}
+                    type="button"
+                  >
+                    {isPlaying ? <Pause size={26} weight="fill" /> : <Play size={26} weight="fill" />}
+                  </button>
+                  <button
+                    className="h-11 w-11 rounded-full border border-[var(--border)] bg-white/5 flex items-center justify-center active:scale-95 transition"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      next();
+                    }}
+                    aria-label="Следующий трек"
+                    type="button"
+                  >
+                    <SkipForward size={22} weight="fill" />
+                  </button>
+                  <button
+                    className={`h-10 w-10 rounded-full border border-[var(--border)] flex items-center justify-center transition ${repeat !== "off" ? "bg-[color-mix(in_srgb,var(--fg)_18%,transparent)] text-[var(--fg)]" : "bg-white/5"}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleRepeat();
+                    }}
+                    aria-label="Повтор"
+                    type="button"
+                  >
+                    {repeat === "one" ? <RepeatOnce size={18} weight="bold" /> : <Repeat size={18} />}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <AnimatePresence initial={false}>
+    <>
+      {lyricsOverlay}
+      <AnimatePresence initial={false}>
       {collapsed ? (
         <motion.div
           key="player-collapsed"
@@ -848,7 +948,7 @@ export const PlayerBar = () => {
               <button
                 className="h-9 w-9 rounded-full bg-white/90 border border-[var(--border)] text-[#0a0d14] flex items-center justify-center active:scale-90 transition"
                 aria-label={isPlaying ? "Пауза" : "Играть"}
-                onClick={isPlaying ? pause : play}
+                onClick={() => (isPlaying ? pause() : play())}
               >
                 {isPlaying ? <Pause size={20} weight="fill" /> : <Play size={20} weight="fill" />}
               </button>
@@ -900,6 +1000,17 @@ export const PlayerBar = () => {
               />
             )}
           </div>
+          {currentTrack && hasLyrics && (
+            <div className="w-full flex justify-end mt-2 pointer-events-auto">
+              <button
+                className="px-3 py-2 rounded-full bg-[color-mix(in_srgb,var(--bg)_60%,transparent)] border border-[var(--border)] text-sm text-[var(--fg)] hover:border-[var(--accent)] transition"
+                onClick={() => setLyricsOverlayVisible(true)}
+                type="button"
+              >
+                Показать текст
+              </button>
+            </div>
+          )}
           {nearEnd && (
             <div className="px-4 py-3 rounded-full bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--fg)]/80 flex items-center gap-3 pointer-events-auto shadow-[var(--shadow-card)] max-w-6xl w-full">
               <span>Что бы вы хотели сказать?</span>
@@ -910,6 +1021,7 @@ export const PlayerBar = () => {
           )}
         </motion.div>
       )}
-    </AnimatePresence>
+      </AnimatePresence>
+    </>
   );
 };

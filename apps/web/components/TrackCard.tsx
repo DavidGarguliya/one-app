@@ -4,8 +4,8 @@ import Image from "next/image";
 import clsx from "classnames";
 import { TrackDTO } from "@one-app/types";
 import { Play } from "@phosphor-icons/react";
-import { fetchLatestTracks } from "../lib/api";
 import { usePlayerStore } from "@one-app/player";
+import { resolveAudioUrl, toAudioTrack } from "@/lib/audioSource";
 const placeholder = "/cover-placeholder.svg";
 
 type Props = {
@@ -22,17 +22,17 @@ export function TrackCard({ track, variant = "grid", queue, index = 0, href }: P
   const handlePlay = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const latest = await fetchLatestTracks(50).catch(() => []);
-    const baseList = latest.length ? latest : queue && queue.length ? queue : [track];
-    const mapped = baseList.map((t) => ({
-      id: t.id,
-      url: (t as any).audioUrl || (t as any).url,
-      title: t.title,
-      artist: t.artist || "",
-      coverUrl: t.coverUrl
-    })) as any[];
+    const baseList = queue && queue.length ? queue : [track];
+    const withUrls = await Promise.all(
+      baseList.map(async (t) => {
+        const url = await resolveAudioUrl(t);
+        return url ? toAudioTrack(t, url) : null;
+      })
+    );
+    const mapped = withUrls.filter(Boolean) as any[];
+    if (!mapped.length) return;
     const start = mapped.findIndex((t) => t.id === track.id);
-    setQueue(mapped, Math.max(0, start >= 0 ? start : Math.min(index, mapped.length - 1)));
+    setQueue(mapped, Math.max(0, start >= 0 ? start : Math.min(index, mapped.length - 1)), { type: "custom" });
     play();
   };
 
@@ -43,7 +43,7 @@ export function TrackCard({ track, variant = "grid", queue, index = 0, href }: P
           className={clsx(
             "relative overflow-hidden bg-[var(--card)] h-[180px] w-full",
             "rounded-[12px] border border-[var(--border)] shadow-[var(--shadow-card)]",
-            "transition-colors duration-200 group-hover:border-[var(--accent)] group-hover:shadow-[0_0_0_2px_color-mix(in_srgb,var(--accent)_70%,transparent),0_16px_32px_rgba(0,0,0,0.2)]"
+            "transition-all duration-200 group-hover:border-[color-mix(in_srgb,var(--accent)_60%,transparent)] group-hover:shadow-[0_0_0_0.5px_color-mix(in_srgb,var(--accent)_60%,transparent),0_8px_16px_rgba(0,0,0,0.14)]"
           )}
         >
           <Image

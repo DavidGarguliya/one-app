@@ -9,27 +9,31 @@ import { CtaButton } from "./CtaButton";
 import { usePlayerStore } from "@one-app/player";
 import { ArrowLeft } from "@phosphor-icons/react";
 import { useRouter } from "next/navigation";
+import { resolveAudioUrl, toAudioTrack } from "@/lib/audioSource";
+const placeholder = "/cover-placeholder.svg";
 
 export default function TrackDetail({ track, related }: { track: TrackDTO; related: TrackDTO[] }) {
   const player = usePlayerStore();
   const { currentTrack, isPlaying } = player;
   const ctaVisible = player.currentTrack?.id === track?.id && player.isPlaying;
   const router = useRouter();
-  const relatedQueue = related
-    .filter((t) => (t as any).audioUrl || (t as any).url)
-    .map((t) => ({
-      id: t.id,
-      url: (t as any).audioUrl || (t as any).url,
-      title: t.title,
-      artist: t.artist || "",
-      coverUrl: t.coverUrl
-    })) as any[];
+
+  const buildRelatedQueue = async () => {
+    const resolved = await Promise.all(
+      related.map(async (t) => {
+        const url = await resolveAudioUrl(t);
+        if (!url) return null;
+        return toAudioTrack(t, url);
+      })
+    );
+    return resolved.filter(Boolean) as any[];
+  };
 
   return (
     <main className="px-4 pb-24 pt-10 md:px-8 lg:px-12 space-y-8">
       <div className="flex flex-col md:flex-row gap-6">
         <div className="relative h-60 w-60 shrink-0 overflow-hidden rounded-2xl bg-white/5">
-          <Image src={track.coverUrl} alt={track.title} fill className="object-cover" sizes="240px" />
+          <Image src={track.coverUrl || placeholder} alt={track.title} fill className="object-cover" sizes="240px" />
         </div>
         <div className="flex-1 space-y-3">
           <button
@@ -87,18 +91,22 @@ export default function TrackDetail({ track, related }: { track: TrackDTO; relat
           {related.map((item) => (
             <Card key={item.id} interactive={false} className="group flex items-center gap-3 bg-transparent border-none py-2 transition-all duration-200 ease-out">
               <div className="relative h-10 w-10 bg-white/10 overflow-hidden rounded-md">
-                <Image src={item.coverUrl} alt={item.title} fill className="object-cover" sizes="40px" />
+                <Image src={item.coverUrl || placeholder} alt={item.title} fill className="object-cover" sizes="40px" />
                 <button
                   type="button"
                   onClick={() => {
-                    const ids = relatedQueue.map((t) => t.id);
-                    const idx = ids.indexOf(item.id);
-                    if (currentTrack?.id === item.id) {
-                      isPlaying ? player.pause() : player.play();
-                    } else {
-                      player.setQueue(relatedQueue, Math.max(0, idx));
-                      player.play();
-                    }
+                    (async () => {
+                      const queue = await buildRelatedQueue();
+                      if (!queue.length) return;
+                      const ids = queue.map((t) => t.id);
+                      const idx = ids.indexOf(item.id);
+                      if (currentTrack?.id === item.id) {
+                        isPlaying ? player.pause() : player.play();
+                      } else {
+                        player.setQueue(queue, Math.max(0, idx));
+                        player.play();
+                      }
+                    })();
                   }}
                   className={`absolute inset-0 z-10 flex items-center justify-center bg-black/45 transition-all duration-200 ease-out hover:bg-black/55 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] pointer-events-auto ${
                     currentTrack?.id === item.id && isPlaying ? "opacity-100" : "opacity-0 group-hover:opacity-100"

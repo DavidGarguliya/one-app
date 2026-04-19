@@ -9,6 +9,9 @@ export type AudioTrack = {
   artist?: string;
   duration?: number;
   coverUrl?: string;
+  lyricsLrcUrl?: string | null;
+  lyricsJsonUrl?: string | null;
+  lyricsLrc?: string | null;
 };
 
 export type AudioEvents =
@@ -16,6 +19,7 @@ export type AudioEvents =
   | "ended"
   | "buffering"
   | "play"
+  | "playing"
   | "pause"
   | "error"
   | "loadedmetadata";
@@ -33,7 +37,6 @@ class AudioEngine extends EventEmitter {
     // Avoid Node EventEmitter throwing when `error` is emitted without listeners.
     this.on("error", () => {});
   }
-
 
   get current(): AudioTrack | null {
     const idx = this.order[this.orderIndex] ?? 0;
@@ -54,9 +57,11 @@ class AudioEngine extends EventEmitter {
     this.audio.addEventListener("ended", () => this.handleEnded());
     this.audio.addEventListener("waiting", () => this.emit("buffering"));
     this.audio.addEventListener("play", () => this.emit("play"));
+    this.audio.addEventListener("playing", () => this.emit("playing"));
     this.audio.addEventListener("pause", () => this.emit("pause"));
     this.audio.addEventListener("loadedmetadata", () => this.emit("loadedmetadata"));
     this.audio.addEventListener("error", () => this.emit("error"));
+    this.audio.addEventListener("stalled", () => this.emit("buffering"));
   }
 
   setQueue(queue: AudioTrack[], startIndex = 0) {
@@ -190,7 +195,7 @@ class AudioEngine extends EventEmitter {
     return {
       current: this.current,
       queue: this.queue,
-      index: this.index,
+      index: this.orderIndex,
       duration: this.audio?.duration ?? 0,
       currentTime: this.audio?.currentTime ?? 0,
       paused: this.audio?.paused ?? true,
