@@ -10,10 +10,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: one-app-db
-          property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
@@ -36,10 +32,4 @@ services:
 
   - type: redis
     name: one-app-redis
-    plan: free
-
-databases:
-  - name: one-app-db
-    databaseName: oneapp
-    user: oneapp
     plan: free
