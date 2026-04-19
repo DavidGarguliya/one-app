@@ -1,0 +1,45 @@
+version: "1"
+
+services:
+  - type: web
+    name: one-app-api
+    env: node
+    plan: free # Change to a different plan in dashboard if needed
+    buildCommand: pnpm install && pnpm --filter api build
+    startCommand: pnpm --filter api start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: one-app-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: one-app-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: WEB_ORIGIN
+        value: "https://one-app.vercel.app" # TO BE UPDATED
+      - key: ADMIN_ORIGIN
+        value: "https://admin-one-app.vercel.app" # TO BE UPDATED
+      - key: S3_ENDPOINT
+        value: "TO_BE_FILLED_WITH_AWS_OR_CLOUDFLARE_URL"
+      - key: S3_BUCKET
+        value: "TO_BE_FILLED"
+      - key: S3_ACCESS_KEY
+        value: "TO_BE_FILLED"
+      - key: S3_SECRET_KEY
+        value: "TO_BE_FILLED"
+
+  - type: redis
+    name: one-app-redis
+    plan: free
+
+databases:
+  - name: one-app-db
+    databaseName: oneapp
+    user: oneapp
+    plan: free
