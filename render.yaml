@@ -5,7 +5,7 @@ services:
     name: one-app-api
     env: node
     plan: free # Change to a different plan in dashboard if needed
-    buildCommand: pnpm install && pnpm --filter api build
+    buildCommand: pnpm install --no-frozen-lockfile && pnpm --filter api build
     startCommand: pnpm --filter api start:prod
     envVars:
       - key: NODE_ENV
